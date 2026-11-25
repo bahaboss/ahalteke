@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   BookOpen,
@@ -10,16 +10,8 @@ import {
   Trash2,
   Trophy,
 } from 'lucide-react';
-import {
-  deleteBookAdmin,
-  deleteCompetitionAdmin,
-  fetchBooks,
-  fetchCompetitions,
-  fetchComplexes,
-  saveBookAdmin,
-  saveCompetitionAdmin,
-} from '../../services';
-import type { BookItem, Competition, EquestrianComplex } from '../../types';
+import { useAppStore } from '../../store';
+import type { BookItem, Competition } from '../../types';
 import { Button, Card, Modal } from '../common';
 
 type ContentTab = 'competitions' | 'books';
@@ -45,11 +37,18 @@ const BOOK_CATEGORY_LABELS: Record<BookItem['category'], string> = {
 };
 
 export const AdminContentScreen: React.FC = () => {
+  const {
+    competitions,
+    books,
+    complexes,
+    upsertCompetition,
+    removeCompetition,
+    upsertBook,
+    removeBook,
+    isHydrating,
+  } = useAppStore();
+
   const [activeTab, setActiveTab] = useState<ContentTab>('competitions');
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [books, setBooks] = useState<BookItem[]>([]);
-  const [complexes, setComplexes] = useState<EquestrianComplex[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
@@ -89,32 +88,7 @@ export const AdminContentScreen: React.FC = () => {
   } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [compRes, bookRes, cmpRes] = await Promise.all([
-          fetchCompetitions(),
-          fetchBooks(),
-          fetchComplexes(),
-        ]);
-        if (!active) return;
-        setCompetitions(compRes.data);
-        setBooks(bookRes.data);
-        setComplexes(cmpRes.data);
-        if (cmpRes.data.length > 0) {
-          setCompComplexId(cmpRes.data[0].id);
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const loading = isHydrating && competitions.length === 0 && books.length === 0;
 
   const showToast = (msg: string) => {
     setFeedbackMsg(msg);
@@ -177,7 +151,7 @@ export const AdminContentScreen: React.FC = () => {
     setCompError(null);
     setCompSaving(true);
     try {
-      const res = await saveCompetitionAdmin({
+      await upsertCompetition({
         id: editingCompId,
         title: compTitle,
         category: compCategory,
@@ -188,7 +162,6 @@ export const AdminContentScreen: React.FC = () => {
         status: compStatus,
         description: compDesc,
       });
-      setCompetitions(res.data);
       setCompModalOpen(false);
       showToast(
         editingCompId
@@ -233,7 +206,7 @@ export const AdminContentScreen: React.FC = () => {
     setBookError(null);
     setBookSaving(true);
     try {
-      const res = await saveBookAdmin({
+      await upsertBook({
         id: editingBookId,
         title: bookTitle,
         author: bookAuthor,
@@ -245,7 +218,6 @@ export const AdminContentScreen: React.FC = () => {
         availableFormats: ['PDF', 'EPUB'],
         isFeatured: bookFeatured,
       });
-      setBooks(res.data);
       setBookModalOpen(false);
       showToast(
         editingBookId
@@ -264,12 +236,10 @@ export const AdminContentScreen: React.FC = () => {
     setDeleting(true);
     try {
       if (deleteConfirm.type === 'competitions') {
-        const res = await deleteCompetitionAdmin(deleteConfirm.id);
-        setCompetitions(res.data);
+        await removeCompetition(deleteConfirm.id);
         showToast(`«${deleteConfirm.title}» ýaryşy aýryldy.`);
       } else {
-        const res = await deleteBookAdmin(deleteConfirm.id);
-        setBooks(res.data);
+        await removeBook(deleteConfirm.id);
         showToast(`«${deleteConfirm.title}» kitaby aýryldy.`);
       }
       setDeleteConfirm(null);

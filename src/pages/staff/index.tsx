@@ -24,6 +24,7 @@ import {
   StaffIoTSensorsScreen,
   StaffStableHorsesScreen,
 } from '../../components/staff';
+import { computeDynamicEcoDashboard } from '../../services';
 import { useAppStore } from '../../store';
 
 export const StaffOverviewPage: React.FC = () => {
@@ -35,6 +36,8 @@ export const StaffOverviewPage: React.FC = () => {
     feedingPlans,
     hygieneTasks,
     ecoMetrics,
+    ecoRecommendations,
+    wasteToGreenLogs,
     vetSchedule,
     iotAlertLogs,
     resolveIoTAlert,
@@ -56,10 +59,18 @@ export const StaffOverviewPage: React.FC = () => {
     feedingPlans.length > 0 ? Math.round((completedFeedings / feedingPlans.length) * 100) : 100;
   const completedHygiene = hygieneTasks.filter((h) => h.completedToday).length;
 
-  const complexEco =
-    ecoMetrics.find((e) => e.complexId === session.complexId) ?? ecoMetrics[0];
-  const ecoScore = complexEco?.ecoRatingScore ?? 92;
-  const solarShare = complexEco?.solarSharePercent ?? 82;
+  const dynamicEco = computeDynamicEcoDashboard({
+    complexId: session.complexId,
+    stableLabel: session.stableName,
+    ecoMetrics,
+    feedingPlans,
+    hygieneTasks,
+    iotAlertLogs,
+    wasteLogs: wasteToGreenLogs,
+    recommendations: ecoRecommendations,
+  });
+  const ecoScore = dynamicEco.ecoScore;
+  const solarShare = dynamicEco.kpis.solarSharePercent;
 
   const stableSensors = assignedStable
     ? iotTelemetry.filter((t) => t.stableId === assignedStable.id)

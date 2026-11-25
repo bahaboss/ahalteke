@@ -15,6 +15,7 @@ import type {
   ApiResponse,
   EcoDashboardPayload,
   EcoMetrics,
+  EcoRecommendation,
   FeedingPeriod,
   FeedingPlan,
   FeedingPlanUpsertInput,
@@ -27,14 +28,20 @@ import type {
   TrainingLoadLevel,
   TrainingLog,
   TrainingLogInput,
+  VetScheduleInput,
   VetScheduleItem,
+  WasteToGreenLog,
+  WasteToGreenLogInput,
 } from '../types';
 import { mockRequest } from './apiClient';
 
 const FEEDING_STATE_KEY = 'smart_green_ahalteke_feeding_state_v1';
 const FEEDING_PLANS_CUSTOM_KEY = 'smart_green_ahalteke_feeding_plans_v1';
 const HYGIENE_STATE_KEY = 'smart_green_ahalteke_hygiene_state_v1';
+const HYGIENE_CONFIRM_KEY = 'smart_green_ahalteke_hygiene_confirm_v2';
 const TRAINING_LOGS_KEY = 'smart_green_ahalteke_training_logs_v1';
+const VET_SCHEDULE_KEY = 'smart_green_ahalteke_vet_schedule_v1';
+const WASTE_LOGS_KEY = 'smart_green_ahalteke_waste_logs_v1';
 const HORSE_NOTES_KEY = 'smart_green_ahalteke_staff_horse_notes_v1';
 const IOT_ALERT_LOGS_KEY = 'smart_green_ahalteke_iot_alert_logs_v1';
 
@@ -411,10 +418,12 @@ export async function fetchTrainingLogs(horseId?: string): Promise<ApiResponse<T
   }, 120);
 }
 
-// TODO: [BACKEND_API] POST /api/v1/training-logs — Täze sport türgenleşik ýazgysyny goşmak.
+// TODO: [BACKEND_API] POST /api/v1/stables/:id/logs — Täze sport türgenleşik ýazgysyny athananyň žurnalyna goşmak.
 export async function createTrainingLog(
-  input: TrainingLogInput
+  input: TrainingLogInput,
+  stableId?: string
 ): Promise<ApiResponse<TrainingLog>> {
+  void stableId;
   const durationMinutes = Number(input.durationMinutes);
   const distanceKm = Number(input.distanceKm);
   const notes = input.notes.trim().replace(/\s+/g, ' ').slice(0, 400);
@@ -465,33 +474,220 @@ export async function createTrainingLog(
   }, 180);
 }
 
+interface HygieneConfirmEntry {
+  completedToday: boolean;
+  confirmedBy?: string;
+  confirmedAt?: string;
+}
+
+function readStoredVetSchedule(): VetScheduleItem[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(VET_SCHEDULE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const valid = parsed.filter(
+      (item): item is VetScheduleItem =>
+        Boolean(item) &&
+        typeof item === 'object' &&
+        typeof item.id === 'string' &&
+        typeof item.title === 'string' &&
+        typeof item.horseId === 'string'
+    );
+    return valid.length > 0 ? valid : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredVetSchedule(items: VetScheduleItem[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(VET_SCHEDULE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage quota errors cleanly
+  }
+}
+
+function readHygieneConfirmMap(): Record<string, HygieneConfirmEntry> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(HYGIENE_CONFIRM_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const clean: Record<string, HygieneConfirmEntry> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([k, v]) => {
+      if (v && typeof v === 'object' && typeof (v as HygieneConfirmEntry).completedToday === 'boolean') {
+        const entry = v as HygieneConfirmEntry;
+        clean[k] = {
+          completedToday: entry.completedToday,
+          confirmedBy: typeof entry.confirmedBy === 'string' ? entry.confirmedBy : undefined,
+          confirmedAt: typeof entry.confirmedAt === 'string' ? entry.confirmedAt : undefined,
+        };
+      }
+    });
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
+function writeHygieneConfirmMap(map: Record<string, HygieneConfirmEntry>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HYGIENE_CONFIRM_KEY, JSON.stringify(map));
+  } catch {
+    // Ignore storage quota errors cleanly
+  }
+}
+
+function formatNowTimestamp(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d} ${hh}:${mm}`;
+}
+
 // TODO: [BACKEND_API] GET /api/v1/health/vet-schedule — Weterinar barlaglarynyň we waksina senenamasynyň sanawyny almak.
 export async function fetchVetSchedule(): Promise<ApiResponse<VetScheduleItem[]>> {
-  return mockRequest(() => [...mockVetSchedule], 120);
+  return mockRequest(() => {
+    const stored = readStoredVetSchedule();
+    return stored ? [...stored] : mockVetSchedule.map((item) => ({ ...item }));
+  }, 120);
+}
+
+// TODO: [BACKEND_API] POST /api/v1/stables/:id/logs — Weterinar we waksina senenamasyna täze saglyk ýazgysyny goşmak.
+export async function createVetScheduleItem(
+  stableId: string,
+  input: VetScheduleInput
+): Promise<ApiResponse<VetScheduleItem>> {
+  void stableId;
+  const title = input.title.trim().replace(/\s+/g, ' ').slice(0, 140);
+  const veterinarian = input.veterinarian.trim().replace(/\s+/g, ' ').slice(0, 100);
+  const notes = input.notes.trim().replace(/\s+/g, ' ').slice(0, 400);
+
+  if (!input.horseId) {
+    throw new Error('Weterinar belligi üçin bedewi saýlaň.');
+  }
+  if (title.length < 3) {
+    throw new Error('Barlag ýa-da waksina ady azyndan 3 harpdan ybarat bolmaly.');
+  }
+  if (!input.scheduledDate) {
+    throw new Error('Senäni görkeziň.');
+  }
+  if (veterinarian.length < 3) {
+    throw new Error('Weterinar lukmanyň adyny giriziň.');
+  }
+  if (notes.length < 4) {
+    throw new Error('Gysgaça lukman belligini ýa-da görkezmesini ýazyň.');
+  }
+
+  return mockRequest(() => {
+    const existing = readStoredVetSchedule() ?? mockVetSchedule.map((item) => ({ ...item }));
+    const created: VetScheduleItem = {
+      id: `vet-${Date.now().toString(36)}`,
+      horseId: input.horseId,
+      horseName: input.horseName,
+      title,
+      category: input.category,
+      scheduledDate: input.scheduledDate,
+      veterinarian,
+      status: input.status,
+      notes,
+    };
+    writeStoredVetSchedule([created, ...existing]);
+    return created;
+  }, 140);
+}
+
+// TODO: [BACKEND_API] POST /api/v1/stables/:id/logs — Weterinar barlagynyň ýagdaýyny täzelemek.
+export async function updateVetScheduleStatus(
+  stableId: string,
+  recordId: string,
+  status: VetScheduleItem['status']
+): Promise<ApiResponse<VetScheduleItem[]>> {
+  void stableId;
+  return mockRequest(() => {
+    const existing = readStoredVetSchedule() ?? mockVetSchedule.map((item) => ({ ...item }));
+    const updated = existing.map((item) =>
+      item.id === recordId ? { ...item, status } : item
+    );
+    writeStoredVetSchedule(updated);
+    return updated;
+  }, 110);
 }
 
 // TODO: [BACKEND_API] GET /api/v1/stables/hygiene — Athananyň gündelik arassaçylyk çek-listini almak.
 export async function fetchHygieneTasks(): Promise<ApiResponse<HygieneTask[]>> {
   return mockRequest(() => {
-    const overrides = readBooleanMap(HYGIENE_STATE_KEY);
-    return mockHygieneTasks.map((task) =>
-      typeof overrides[task.id] === 'boolean'
-        ? { ...task, completedToday: overrides[task.id] }
-        : { ...task }
-    );
+    const legacyOverrides = readBooleanMap(HYGIENE_STATE_KEY);
+    const confirmOverrides = readHygieneConfirmMap();
+    return mockHygieneTasks.map((task) => {
+      const confirm = confirmOverrides[task.id];
+      if (confirm) {
+        return {
+          ...task,
+          completedToday: confirm.completedToday,
+          confirmedBy: confirm.completedToday ? confirm.confirmedBy : undefined,
+          confirmedAt: confirm.completedToday ? confirm.confirmedAt : undefined,
+        };
+      }
+      if (typeof legacyOverrides[task.id] === 'boolean') {
+        const done = legacyOverrides[task.id];
+        return {
+          ...task,
+          completedToday: done,
+          confirmedBy: done ? task.confirmedBy : undefined,
+          confirmedAt: done ? task.confirmedAt : undefined,
+        };
+      }
+      return { ...task };
+    });
   }, 120);
 }
 
-// TODO: [BACKEND_API] PATCH /api/v1/stables/hygiene/:id/complete — Arassaçylyk tabşyrygynyň ýerine ýetirilendigini bellemek.
+// TODO: [BACKEND_API] POST /api/v1/stables/:id/logs — Athananyň arassaçylyk çek-listini jogapkär işgäriň tassyklama wagty bilen ýazmak.
 export async function toggleHygieneTaskCompletion(
   taskId: string,
-  completed: boolean
-): Promise<ApiResponse<{ taskId: string; completedToday: boolean }>> {
+  completed: boolean,
+  confirmedBy?: string,
+  stableId?: string
+): Promise<
+  ApiResponse<{
+    taskId: string;
+    completedToday: boolean;
+    confirmedBy?: string;
+    confirmedAt?: string;
+  }>
+> {
+  void stableId;
   return mockRequest(() => {
-    const current = readBooleanMap(HYGIENE_STATE_KEY);
-    current[taskId] = completed;
-    writeBooleanMap(HYGIENE_STATE_KEY, current);
-    return { taskId, completedToday: completed };
+    const legacy = readBooleanMap(HYGIENE_STATE_KEY);
+    legacy[taskId] = completed;
+    writeBooleanMap(HYGIENE_STATE_KEY, legacy);
+
+    const confirmMap = readHygieneConfirmMap();
+    const resolvedBy = completed ? confirmedBy?.trim() || 'Jogapkär Işgär' : undefined;
+    const resolvedAt = completed ? formatNowTimestamp() : undefined;
+
+    confirmMap[taskId] = {
+      completedToday: completed,
+      confirmedBy: resolvedBy,
+      confirmedAt: resolvedAt,
+    };
+    writeHygieneConfirmMap(confirmMap);
+
+    return {
+      taskId,
+      completedToday: completed,
+      confirmedBy: resolvedBy,
+      confirmedAt: resolvedAt,
+    };
   }, 100);
 }
 
@@ -615,6 +811,348 @@ export async function toggleEcoRecommendationApplied(
     writeBooleanMap(ECO_RECOMMENDATIONS_KEY, current);
     return { recommendationId, applied };
   }, 110);
+}
+
+// TODO: [BACKEND_API] GET /api/v1/stables/:id/eco-dashboard — Eko-Maslahatçy sanawyny we ýerine ýetiriliş ýagdaýyny almak.
+export async function fetchEcoRecommendations(): Promise<ApiResponse<EcoRecommendation[]>> {
+  return mockRequest(() => {
+    const appliedMap = readBooleanMap(ECO_RECOMMENDATIONS_KEY);
+    return mockEcoRecommendations.map((rec) => ({
+      ...rec,
+      applied: typeof appliedMap[rec.id] === 'boolean' ? appliedMap[rec.id] : rec.applied,
+    }));
+  }, 90);
+}
+
+const SEED_WASTE_TO_GREEN_LOGS: WasteToGreenLog[] = [
+  {
+    id: 'wst-seed-01',
+    stableId: 'stb-01',
+    date: '2026-11-24',
+    organicWasteKg: 185,
+    compostKg: 126,
+    biogasM3: 26,
+    destination: 'oba_hojalyk',
+    recordedBy: 'Eko-Inžener Baýramgeldi Ataýew',
+    notes: 'Bokslardan ýygnalan organiki saman we ders bio-kompost kamerasyna geçirildi.',
+  },
+  {
+    id: 'wst-seed-02',
+    stableId: 'stb-01',
+    date: '2026-11-23',
+    organicWasteKg: 170,
+    compostKg: 116,
+    biogasM3: 24,
+    destination: 'ýyladyşhana',
+    recordedBy: 'Halypa seýis Merdan Berdiýew',
+    notes: 'Taýýarlanan organiki dökün ýorunja meýdany we ýyladyşhana üçin ugradyldy.',
+  },
+  {
+    id: 'wst-seed-03',
+    stableId: 'stb-01',
+    date: '2026-11-21',
+    organicWasteKg: 210,
+    compostKg: 142,
+    biogasM3: 30,
+    destination: 'biogaz_stansiýasy',
+    recordedBy: 'Eko-Inžener Baýramgeldi Ataýew',
+    notes: 'Biogaz reaktoryndan alnan energiýa gijeki suw gyzdyryş ulgamyna berildi.',
+  },
+  {
+    id: 'wst-seed-04',
+    stableId: 'stb-01',
+    date: '2026-11-19',
+    organicWasteKg: 160,
+    compostKg: 109,
+    biogasM3: 22,
+    destination: 'oba_hojalyk',
+    recordedBy: 'Halypa seýis Merdan Berdiýew',
+    notes: 'Nol zyňyndy (Zero-Waste) hepdelik hasabaty doly ýapyldy.',
+  },
+];
+
+function readStoredWasteLogs(): WasteToGreenLog[] {
+  if (typeof window === 'undefined') return [...SEED_WASTE_TO_GREEN_LOGS];
+  try {
+    const raw = window.localStorage.getItem(WASTE_LOGS_KEY);
+    if (!raw) return [...SEED_WASTE_TO_GREEN_LOGS];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...SEED_WASTE_TO_GREEN_LOGS];
+    const valid = parsed.filter(
+      (item): item is WasteToGreenLog =>
+        Boolean(item) &&
+        typeof item === 'object' &&
+        typeof item.id === 'string' &&
+        typeof item.compostKg === 'number'
+    );
+    return valid.length > 0 ? valid : [...SEED_WASTE_TO_GREEN_LOGS];
+  } catch {
+    return [...SEED_WASTE_TO_GREEN_LOGS];
+  }
+}
+
+function writeStoredWasteLogs(logs: WasteToGreenLog[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(WASTE_LOGS_KEY, JSON.stringify(logs.slice(0, 60)));
+  } catch {
+    // Ignore storage quota errors cleanly
+  }
+}
+
+// TODO: [BACKEND_API] GET /api/v1/stables/:id/eco/waste-logs — Organiki galyndydan bio-dökün we biogaz hasabatlaryny almak.
+export async function fetchWasteToGreenLogs(): Promise<ApiResponse<WasteToGreenLog[]>> {
+  return mockRequest(() => readStoredWasteLogs(), 90);
+}
+
+// TODO: [BACKEND_API] POST /api/v1/stables/:id/eco/waste-logs — Täze Waste-to-Green gündelik hasabatyny goşmak.
+export async function createWasteToGreenLog(
+  stableId: string,
+  input: WasteToGreenLogInput
+): Promise<ApiResponse<WasteToGreenLog>> {
+  const organicWasteKg = Math.round(Number(input.organicWasteKg));
+  const compostKg = Math.round(Number(input.compostKg));
+  const biogasM3 = Math.round(Number(input.biogasM3) * 10) / 10;
+  const notes = input.notes.trim().replace(/\s+/g, ' ').slice(0, 320);
+
+  if (!input.date) {
+    throw new Error('Hasabat senesini görkeziň.');
+  }
+  if (!Number.isFinite(organicWasteKg) || organicWasteKg < 5 || organicWasteKg > 5000) {
+    throw new Error('Organiki galyndy mukdary 5–5000 kg aralygynda bolmaly.');
+  }
+  if (!Number.isFinite(compostKg) || compostKg < 1 || compostKg > 4000) {
+    throw new Error('Bio-dökün mukdary 1–4000 kg aralygynda bolmaly.');
+  }
+  if (!Number.isFinite(biogasM3) || biogasM3 < 0 || biogasM3 > 600) {
+    throw new Error('Biogaz mukdary 0–600 m³ aralygynda bolmaly.');
+  }
+  if (notes.length < 4) {
+    throw new Error('Gysgaça hasabat belligini ýazyň.');
+  }
+
+  return mockRequest(() => {
+    const created: WasteToGreenLog = {
+      id: `wst-${Date.now().toString(36)}`,
+      stableId: stableId || 'stb-01',
+      date: input.date,
+      organicWasteKg,
+      compostKg,
+      biogasM3,
+      destination: input.destination,
+      recordedBy: input.recordedBy.trim() || 'Jogapkär Işgär',
+      notes,
+    };
+    const next = [created, ...readStoredWasteLogs()];
+    writeStoredWasteLogs(next);
+    return created;
+  }, 130);
+}
+
+export interface DynamicEcoInputs {
+  complexId?: string;
+  stableLabel?: string;
+  ecoMetrics: EcoMetrics[];
+  feedingPlans: FeedingPlan[];
+  hygieneTasks: HygieneTask[];
+  iotAlertLogs: IoTAlertLogItem[];
+  wasteLogs: WasteToGreenLog[];
+  recommendations: EcoRecommendation[];
+}
+
+/**
+ * IoT duýduryşlary, /staff/feeding isripsiz rasion, /staff/health-training arassaçylyk
+ * çek-listi, Waste-to-Green ýazgylary we Eko-Maslahatçy ädimleri esasynda Eco-Score (0–100)
+ * bahasyny real wagtda dinamiki hasaplaýar (hem /staff/green-eco, hem /staff/overview üçin).
+ */
+export function computeDynamicEcoDashboard(inputs: DynamicEcoInputs): EcoDashboardPayload {
+  const {
+    complexId,
+    stableLabel,
+    ecoMetrics,
+    feedingPlans,
+    hygieneTasks,
+    iotAlertLogs,
+    wasteLogs,
+    recommendations,
+  } = inputs;
+
+  const baseMetric =
+    ecoMetrics.find((m) => m.complexId === complexId) ?? ecoMetrics[0] ?? mockEcoMetrics[0];
+
+  const activeRecs = recommendations.length > 0 ? recommendations : mockEcoRecommendations;
+  const waterExtraLiters = activeRecs.find((r) => r.id === 'eco-rec-01')?.applied ? 420 : 0;
+  const energyExtraKwh = activeRecs.find((r) => r.id === 'eco-rec-02')?.applied ? 64 : 0;
+  const wasteRecExtraKg = activeRecs.find((r) => r.id === 'eco-rec-03')?.applied ? 135 : 0;
+
+  // 1. IoT we Suw tygşytlylygy (25%)
+  const unresolvedIoTCount = iotAlertLogs.filter((a) => !a.resolved).length;
+  const iotPenalty = Math.min(18, unresolvedIoTCount * 5);
+  const waterSavedPercent = Math.min(
+    98,
+    baseMetric.waterRecycledPercent + (waterExtraLiters > 0 ? 4 : 0)
+  );
+  const waterScore = Math.max(
+    55,
+    Math.min(100, Math.round(waterSavedPercent + 7 + (waterExtraLiters > 0 ? 4 : 0) - iotPenalty))
+  );
+
+  // 2. Ýaşyl energiýa (25%)
+  const solarSharePercent = Math.min(
+    98,
+    baseMetric.solarSharePercent + (energyExtraKwh > 0 ? 3 : 0)
+  );
+  const energyScore = Math.max(
+    55,
+    Math.min(100, Math.round(solarSharePercent + 8 + (energyExtraKwh > 0 ? 4 : 0)))
+  );
+
+  // 3. Isripsiz iýmitlendiriş — /staff/feeding bilen göni bagly (25%)
+  const totalPlans = Math.max(1, feedingPlans.length);
+  const completedPlans = feedingPlans.filter((p) => p.completedToday);
+  const feedingCompletionRatio = completedPlans.length / totalPlans;
+  const totalSavedTodayKg = feedingPlans.reduce((sum, p) => sum + (p.savedForageKg || 0), 0);
+  const completedSavedTodayKg = completedPlans.reduce((sum, p) => sum + (p.savedForageKg || 0), 0);
+  const monthlyFeedSavedKg = Math.round(480 + totalSavedTodayKg * 16 + completedSavedTodayKg * 10);
+  const feedSavedPercent = Math.min(
+    28,
+    Math.max(10, Math.round(13 + feedingCompletionRatio * 8 + Math.min(4, totalSavedTodayKg * 0.4)))
+  );
+  const feedingScore = Math.max(
+    55,
+    Math.min(100, Math.round(74 + feedingCompletionRatio * 20 + Math.min(6, totalSavedTodayKg * 0.8)))
+  );
+
+  // 4. Waste-to-Green we Arassaçylyk — /staff/health-training + Waste hasabatlary (25%)
+  const totalHygiene = Math.max(1, hygieneTasks.length);
+  const completedHygieneCount = hygieneTasks.filter((t) => t.completedToday).length;
+  const hygieneRatio = completedHygieneCount / totalHygiene;
+
+  const userAddedWasteLogs = wasteLogs.filter((l) => !l.id.startsWith('wst-seed-'));
+  const addedCompostKg = userAddedWasteLogs.reduce((sum, l) => sum + l.compostKg, 0);
+  const addedBiogasM3 = userAddedWasteLogs.reduce((sum, l) => sum + l.biogasM3, 0);
+
+  const wasteToGreenKg = baseMetric.compostProducedKg + wasteRecExtraKg + addedCompostKg;
+  const biogasM3 = Math.round(
+    (baseMetric.compostProducedKg + wasteRecExtraKg) * 0.14 + addedBiogasM3
+  );
+  const wasteScore = Math.max(
+    55,
+    Math.min(
+      100,
+      Math.round(
+        72 +
+          hygieneRatio * 18 +
+          (wasteRecExtraKg > 0 ? 5 : 0) +
+          Math.min(6, userAddedWasteLogs.length * 3)
+      )
+    )
+  );
+
+  const ecoScore = Math.min(
+    100,
+    Math.max(0, Math.round((waterScore + energyScore + feedingScore + wasteScore) / 4))
+  );
+
+  const appliedBoost = activeRecs
+    .filter((r) => r.applied)
+    .reduce((sum, r) => sum + r.scoreBoost, 0);
+
+  const co2ReducedKg =
+    baseMetric.co2ReducedKg +
+    appliedBoost * 180 +
+    Math.round(addedCompostKg * 0.65) +
+    Math.round(completedSavedTodayKg * 8);
+
+  const certificationLabel =
+    ecoScore >= 94
+      ? 'Zümrüt-Altyn Ýaşyl Standart (A+)'
+      : ecoScore >= 86
+        ? 'Altyn Ýaşyl Standart (A)'
+        : ecoScore >= 76
+          ? 'Kümüş Ýaşyl Standart (B+)'
+          : 'Gözegçilikde — Ekologik Ösüş (B)';
+
+  // Soňky hepdelik we aýlyk nokatlary janly täzeläp görkezmek
+  const weeklySeries = mockEcoWeeklySeries.map((pt, idx) =>
+    idx === mockEcoWeeklySeries.length - 1
+      ? {
+          ...pt,
+          waterSavedLiters: pt.waterSavedLiters + Math.round(waterExtraLiters * 0.25),
+          solarEnergyKwh: pt.solarEnergyKwh + Math.round(energyExtraKwh * 0.25),
+          feedSavedKg: Math.round(pt.feedSavedKg + completedSavedTodayKg),
+          wasteToGreenKg: Math.round(pt.wasteToGreenKg + addedCompostKg + Math.round(wasteRecExtraKg * 0.2)),
+          co2ReducedKg: Math.round(pt.co2ReducedKg + Math.round(addedCompostKg * 0.65)),
+        }
+      : { ...pt }
+  );
+
+  const monthlySeries = mockEcoMonthlySeries.map((pt, idx) =>
+    idx === mockEcoMonthlySeries.length - 1
+      ? {
+          ...pt,
+          waterSavedLiters: pt.waterSavedLiters + waterExtraLiters,
+          solarEnergyKwh: pt.solarEnergyKwh + energyExtraKwh,
+          feedSavedKg: monthlyFeedSavedKg,
+          wasteToGreenKg,
+          co2ReducedKg: pt.co2ReducedKg + appliedBoost * 180 + Math.round(addedCompostKg * 0.65),
+        }
+      : { ...pt }
+  );
+
+  return {
+    stableLabel: stableLabel ?? 'Athana №1 — «Altyn Ganat»',
+    ecoScore,
+    baseEcoScore: Math.min(96, baseMetric.ecoRatingScore),
+    certificationLabel,
+    scoreComponents: [
+      {
+        key: 'water',
+        label: 'Suw we IoT gözegçiligi',
+        weightPercent: 25,
+        score: waterScore,
+        detail:
+          unresolvedIoTCount > 0
+            ? `${unresolvedIoTCount} çözülmedik IoT duýduryşy (-${iotPenalty} bal) · Syzma we damjalaýyn ulgam`
+            : 'Ähli IoT datçikleri kadaly · Awtomat suwaryş we syzma goragy',
+      },
+      {
+        key: 'energy',
+        label: 'Ýaşyl energiýa',
+        weightPercent: 25,
+        score: energyScore,
+        detail: `${solarSharePercent}% gün paneli paýy we akylly LED yşyklandyryş`,
+      },
+      {
+        key: 'feeding',
+        label: 'Isripsiz iýmitlendiriş',
+        weightPercent: 25,
+        score: feedingScore,
+        detail: `${completedPlans.length}/${feedingPlans.length} rasion berildi · ${totalSavedTodayKg.toFixed(1)} kg gündelik tygşyt`,
+      },
+      {
+        key: 'waste',
+        label: 'Waste-to-Green we Arassaçylyk',
+        weightPercent: 25,
+        score: wasteScore,
+        detail: `Arassaçylyk ${Math.round(hygieneRatio * 100)}% (${completedHygieneCount}/${hygieneTasks.length}) · ${wasteLogs.length} bio-dökün hasabaty`,
+      },
+    ],
+    kpis: {
+      waterSavedLiters: baseMetric.waterSavedLiters + waterExtraLiters,
+      waterSavedPercent,
+      solarEnergyKwh: baseMetric.solarEnergyGeneratedKwh + energyExtraKwh,
+      solarSharePercent,
+      feedSavedKg: monthlyFeedSavedKg,
+      feedSavedPercent,
+      wasteToGreenKg,
+      biogasM3,
+      co2ReducedKg,
+    },
+    weeklySeries,
+    monthlySeries,
+    recommendations: activeRecs,
+  };
 }
 
 const SEED_HORSE_NOTES: StaffHorseNote[] = [

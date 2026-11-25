@@ -7,6 +7,7 @@ import {
   GraduationCap,
   MessageSquare,
   Search,
+  XCircle,
 } from 'lucide-react';
 import {
   exportAcademyApplicationsCsv,
@@ -17,6 +18,13 @@ import type { AcademyApplication, AcademyApplicationStatus } from '../../types';
 import { Button, Card, Modal } from '../common';
 
 type StatusFilter = 'all' | AcademyApplicationStatus;
+
+const ALL_STATUSES: { status: AcademyApplicationStatus; label: string }[] = [
+  { status: 'garalýar', label: 'Garaşylýar' },
+  { status: 'söhbetdeşlik', label: 'Söhbetdeşlik' },
+  { status: 'tassyklandy', label: 'Kabul edildi' },
+  { status: 'ret_edildi', label: 'Ret edildi' },
+];
 
 export const AdminApplicationsScreen: React.FC = () => {
   const {
@@ -53,6 +61,7 @@ export const AdminApplicationsScreen: React.FC = () => {
       garalýar: applications.filter((a) => a.status === 'garalýar').length,
       söhbetdeşlik: applications.filter((a) => a.status === 'söhbetdeşlik').length,
       tassyklandy: applications.filter((a) => a.status === 'tassyklandy').length,
+      ret_edildi: applications.filter((a) => a.status === 'ret_edildi').length,
     }),
     [applications]
   );
@@ -101,8 +110,8 @@ export const AdminApplicationsScreen: React.FC = () => {
     return (
       <div className="space-y-6" aria-busy="true">
         <div className="h-9 w-80 rounded-xl bg-[#E6EFEA] animate-pulse" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="h-24 rounded-2xl bg-white border border-[#DCE6E1] animate-pulse" />
           ))}
         </div>
@@ -123,8 +132,9 @@ export const AdminApplicationsScreen: React.FC = () => {
             Akademiýa Dalaşgärlik Anketalary
           </h1>
           <p className="text-sm text-[#415850] max-w-2xl">
-            Ulanyjy panelinden ugradylan onlaýn anketalary gözden geçiriň, statusyny «Garaşylýar /
-            Kabul edildi» görnüşinde täzeläň we Excel üçin CSV faýlyna eksport ediň.
+            /user/academy sahypasyndan ugradylan onlaýn anketalary gözden geçiriň, statusyny
+            «Garaşylýar / Söhbetdeşlik / Kabul edildi / Ret edildi» görnüşinde täzeläň we Excel üçin
+            UTF-8 CSV faýlyna eksport ediň.
           </p>
         </div>
 
@@ -149,8 +159,8 @@ export const AdminApplicationsScreen: React.FC = () => {
         </div>
       )}
 
-      {/* 4 Status KPI Kartoçkasy */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 5 Status KPI Kartoçkasy */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         <Card padding="md" className="bg-white space-y-1">
           <p className="text-xs text-[#647A72] font-medium">Jemi anketalar</p>
           <p className="font-mono tabular-nums text-2xl font-bold text-[#0F172A]">{counts.total}</p>
@@ -182,6 +192,15 @@ export const AdminApplicationsScreen: React.FC = () => {
             {counts.tassyklandy}
           </p>
         </Card>
+        <Card padding="md" className="bg-white space-y-1">
+          <p className="text-xs text-[#EF4444] font-medium flex items-center gap-1.5">
+            <XCircle className="w-3.5 h-3.5" aria-hidden="true" />
+            Ret edildi
+          </p>
+          <p className="font-mono tabular-nums text-2xl font-bold text-[#991B1B]">
+            {counts.ret_edildi}
+          </p>
+        </Card>
       </div>
 
       {/* Süzgüç we Gözleg Zoly */}
@@ -203,6 +222,10 @@ export const AdminApplicationsScreen: React.FC = () => {
                 {
                   id: 'tassyklandy' as StatusFilter,
                   label: `Kabul edildi (${counts.tassyklandy})`,
+                },
+                {
+                  id: 'ret_edildi' as StatusFilter,
+                  label: `Ret edildi (${counts.ret_edildi})`,
                 },
               ]
             ).map((tab) => (
@@ -259,7 +282,7 @@ export const AdminApplicationsScreen: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[920px]">
+            <table className="w-full text-left border-collapse min-w-[940px]">
               <thead>
                 <tr className="bg-[#F8FAF9] border-b border-[#DCE6E1] text-[11px] font-semibold text-[#647A72]">
                   <th className="py-3 pl-6 pr-3">Dalaşgär we Mekdebi</th>
@@ -278,7 +301,9 @@ export const AdminApplicationsScreen: React.FC = () => {
                       ? 'text-[#059669]'
                       : app.status === 'söhbetdeşlik'
                         ? 'text-[#0369A1]'
-                        : 'text-[#B45309]';
+                        : app.status === 'ret_edildi'
+                          ? 'text-[#EF4444]'
+                          : 'text-[#B45309]';
 
                   return (
                     <tr key={app.id} className="hover:bg-[#F8FAF9] transition-colors">
@@ -319,6 +344,8 @@ export const AdminApplicationsScreen: React.FC = () => {
                             <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                           ) : app.status === 'söhbetdeşlik' ? (
                             <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
+                          ) : app.status === 'ret_edildi' ? (
+                            <XCircle className="w-3.5 h-3.5" aria-hidden="true" />
                           ) : (
                             <Clock className="w-3.5 h-3.5" aria-hidden="true" />
                           )}
@@ -327,24 +354,24 @@ export const AdminApplicationsScreen: React.FC = () => {
                       </td>
                       <td className="py-3.5 pl-3 pr-6 text-right">
                         <div className="inline-flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
+                          <select
+                            aria-label={`${app.applicantName} statusyny saýla`}
                             disabled={isBusy}
-                            onClick={() =>
+                            value={app.status}
+                            onChange={(e) =>
                               handleChangeStatus(
                                 app.id,
-                                app.status === 'tassyklandy' ? 'garalýar' : 'tassyklandy'
+                                e.target.value as AcademyApplicationStatus
                               )
                             }
-                            className={[
-                              'min-h-[38px] px-3 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50',
-                              app.status === 'tassyklandy'
-                                ? 'bg-[#FEF3C7] text-[#92400E] hover:bg-[#FDE68A]'
-                                : 'bg-[#064E3B] text-white hover:bg-[#053D2E]',
-                            ].join(' ')}
+                            className="min-h-[38px] px-2.5 rounded-lg bg-[#F8FAF9] border border-[#DCE6E1] text-xs font-semibold text-[#0F172A] focus:bg-white focus:outline-2 focus:outline-[#10B981] cursor-pointer disabled:opacity-50"
                           >
-                            {app.status === 'tassyklandy' ? 'Garaşylýar et' : 'Kabul edildi'}
-                          </button>
+                            {ALL_STATUSES.map((opt) => (
+                              <option key={opt.status} value={opt.status}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
                           <button
                             type="button"
                             onClick={() => setSelectedApp(app)}
@@ -365,7 +392,7 @@ export const AdminApplicationsScreen: React.FC = () => {
         )}
       </Card>
 
-      {/* MODAL: Anketa jikme-jik maglumaty we doly status saýlawy */}
+      {/* MODAL: Anketa jikme-jik maglumaty we doly 4 status saýlawy */}
       <Modal
         isOpen={Boolean(selectedApp)}
         onClose={() => setSelectedApp(null)}
@@ -419,7 +446,12 @@ export const AdminApplicationsScreen: React.FC = () => {
               </div>
               <div className="py-2.5 flex justify-between gap-4">
                 <span className="text-[#647A72]">Häzirki status</span>
-                <span className="font-bold text-[#064E3B]">
+                <span
+                  className={[
+                    'font-bold',
+                    selectedApp.status === 'ret_edildi' ? 'text-[#EF4444]' : 'text-[#064E3B]',
+                  ].join(' ')}
+                >
                   {getApplicationStatusLabelTk(selectedApp.status)}
                 </span>
               </div>
@@ -434,15 +466,10 @@ export const AdminApplicationsScreen: React.FC = () => {
 
             <div className="space-y-2 pt-2">
               <p className="text-xs font-semibold text-[#647A72]">Statusy üýtgetmek</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { status: 'garalýar' as AcademyApplicationStatus, label: 'Garaşylýar' },
-                    { status: 'söhbetdeşlik' as AcademyApplicationStatus, label: 'Söhbetdeşlik' },
-                    { status: 'tassyklandy' as AcademyApplicationStatus, label: 'Kabul edildi' },
-                  ]
-                ).map((opt) => {
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_STATUSES.map((opt) => {
                   const isCurrent = selectedApp.status === opt.status;
+                  const isReject = opt.status === 'ret_edildi';
                   return (
                     <button
                       key={opt.status}
@@ -452,8 +479,12 @@ export const AdminApplicationsScreen: React.FC = () => {
                       className={[
                         'min-h-[42px] px-3 rounded-xl text-xs font-semibold transition-colors cursor-pointer',
                         isCurrent
-                          ? 'bg-[#064E3B] text-white'
-                          : 'bg-[#F8FAF9] border border-[#DCE6E1] text-[#0F172A] hover:bg-[#ECFDF5]',
+                          ? isReject
+                            ? 'bg-[#EF4444] text-white'
+                            : 'bg-[#064E3B] text-white'
+                          : isReject
+                            ? 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] hover:bg-[#FEE2E2]'
+                            : 'bg-[#F8FAF9] border border-[#DCE6E1] text-[#0F172A] hover:bg-[#ECFDF5]',
                       ].join(' ')}
                     >
                       {opt.label}

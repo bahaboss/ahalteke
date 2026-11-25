@@ -213,6 +213,17 @@ export interface VetScheduleItem {
   notes: string;
 }
 
+export interface VetScheduleInput {
+  horseId: string;
+  horseName: string;
+  title: string;
+  category: VetScheduleItem['category'];
+  scheduledDate: string;
+  veterinarian: string;
+  status: VetScheduleItem['status'];
+  notes: string;
+}
+
 export interface HygieneTask {
   id: string;
   title: string;
@@ -221,6 +232,8 @@ export interface HygieneTask {
   responsibleRole: string;
   ecoNote: string;
   completedToday: boolean;
+  confirmedBy?: string;
+  confirmedAt?: string;
 }
 
 /** «Ýaşyl Athana» ekologik netijelilik görkezijileri */
@@ -290,6 +303,30 @@ export interface EcoDashboardPayload {
   recommendations: EcoRecommendation[];
 }
 
+export type WasteDestination = 'oba_hojalyk' | 'ýyladyşhana' | 'biogaz_stansiýasy';
+
+export interface WasteToGreenLog {
+  id: string;
+  stableId: string;
+  date: string;
+  organicWasteKg: number;
+  compostKg: number;
+  biogasM3: number;
+  destination: WasteDestination;
+  recordedBy: string;
+  notes: string;
+}
+
+export interface WasteToGreenLogInput {
+  date: string;
+  organicWasteKg: number;
+  compostKg: number;
+  biogasM3: number;
+  destination: WasteDestination;
+  recordedBy: string;
+  notes: string;
+}
+
 export interface Competition {
   id: string;
   title: string;
@@ -335,7 +372,7 @@ export interface AcademyApplication {
   programName: string;
   experienceLevel: 'başlangyç' | 'orta' | 'ýokary';
   submittedAt: string;
-  status: 'garalýar' | 'tassyklandy' | 'söhbetdeşlik';
+  status: 'garalýar' | 'tassyklandy' | 'söhbetdeşlik' | 'ret_edildi';
   preferredComplexId: string;
   motivationNote: string;
 }
@@ -436,7 +473,18 @@ export interface StaffAssignmentInput {
   status: 'işjeň' | 'dynç_alyşda';
 }
 
+export interface ComplexUpsertInput {
+  id?: string;
+  name: string;
+  region: string;
+  address: string;
+  solarCapacityKw: number;
+  ecoCertificationLevel: EquestrianComplex['ecoCertificationLevel'];
+  description: string;
+}
+
 export interface StableCreateInput {
+  id?: string;
   complexId: string;
   name: string;
   code: string;
@@ -446,6 +494,8 @@ export interface StableCreateInput {
   rainwaterHarvestingLiters: number;
   headSeisName: string;
 }
+
+export type StableUpsertInput = StableCreateInput;
 
 export interface CompetitionUpsertInput {
   id?: string;

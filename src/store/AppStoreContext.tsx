@@ -3,6 +3,8 @@ import {
   createHorseNote,
   createStableAdmin,
   createTrainingLog,
+  createVetScheduleItem,
+  createWasteToGreenLog,
   deleteBookAdmin,
   deleteCompetitionAdmin,
   deleteStaffAssignment,
@@ -12,6 +14,7 @@ import {
   fetchCompetitions,
   fetchComplexes,
   fetchEcoMetrics,
+  fetchEcoRecommendations,
   fetchFeedingPlans,
   fetchHorseNotes,
   fetchHorses,
@@ -22,18 +25,23 @@ import {
   fetchStaffAssignments,
   fetchTrainingLogs,
   fetchVetSchedule,
+  fetchWasteToGreenLogs,
   getStoredAuthSession,
   logoutSession,
   resolveIoTAlertLog,
   saveBookAdmin,
   saveCompetitionAdmin,
+  saveComplexAdmin,
   saveIoTAlertLogs,
+  saveStableAdmin,
   saveStaffAssignment,
   submitAcademyApplication,
   toggleCompetitionReminder,
+  toggleEcoRecommendationApplied,
   toggleFeedingPlanCompletion,
   toggleHygieneTaskCompletion,
   updateAcademyApplicationStatusAdmin,
+  updateVetScheduleStatus,
   upsertFeedingPlan,
 } from '../services';
 import type {
@@ -45,7 +53,9 @@ import type {
   BookUpsertInput,
   Competition,
   CompetitionUpsertInput,
+  ComplexUpsertInput,
   EcoMetrics,
+  EcoRecommendation,
   EquestrianComplex,
   FeedingPlan,
   FeedingPlanUpsertInput,
@@ -61,7 +71,10 @@ import type {
   StaffHorseNoteInput,
   TrainingLog,
   TrainingLogInput,
+  VetScheduleInput,
   VetScheduleItem,
+  WasteToGreenLog,
+  WasteToGreenLogInput,
 } from '../types';
 
 export interface AppStoreValue {
@@ -81,6 +94,8 @@ export interface AppStoreValue {
   vetSchedule: VetScheduleItem[];
   hygieneTasks: HygieneTask[];
   ecoMetrics: EcoMetrics[];
+  ecoRecommendations: EcoRecommendation[];
+  wasteToGreenLogs: WasteToGreenLog[];
   competitions: Competition[];
   competitionReminderIds: string[];
   books: BookItem[];
@@ -99,12 +114,30 @@ export interface AppStoreValue {
   ) => Promise<AcademyApplication[]>;
   toggleFeedingComplete: (planId: string, completed: boolean) => Promise<void>;
   saveFeedingPlan: (stableId: string, input: FeedingPlanUpsertInput) => Promise<FeedingPlan[]>;
-  toggleHygieneComplete: (taskId: string, completed: boolean) => Promise<void>;
-  addTrainingLog: (input: TrainingLogInput) => Promise<TrainingLog>;
+  toggleHygieneComplete: (
+    taskId: string,
+    completed: boolean,
+    confirmedBy?: string,
+    stableId?: string
+  ) => Promise<void>;
+  addTrainingLog: (input: TrainingLogInput, stableId?: string) => Promise<TrainingLog>;
+  addVetScheduleItem: (stableId: string, input: VetScheduleInput) => Promise<VetScheduleItem>;
+  updateVetStatus: (
+    stableId: string,
+    recordId: string,
+    status: VetScheduleItem['status']
+  ) => Promise<VetScheduleItem[]>;
+  addWasteToGreenLog: (
+    stableId: string,
+    input: WasteToGreenLogInput
+  ) => Promise<WasteToGreenLog>;
+  toggleEcoRecommendation: (recommendationId: string, applied: boolean) => Promise<void>;
   addHorseNote: (input: StaffHorseNoteInput) => Promise<StaffHorseNote>;
   appendIoTAlertLogs: (entries: IoTAlertLogItem[]) => Promise<IoTAlertLogItem[]>;
   resolveIoTAlert: (alertId: string, resolvedBy: string) => Promise<IoTAlertLogItem[]>;
   addStable: (input: StableCreateInput) => Promise<Stable>;
+  upsertComplex: (input: ComplexUpsertInput) => Promise<EquestrianComplex[]>;
+  upsertStable: (input: StableCreateInput) => Promise<Stable[]>;
   upsertStaffAssignment: (input: StaffAssignmentInput) => Promise<StaffAssignment[]>;
   removeStaffAssignment: (assignmentId: string) => Promise<StaffAssignment[]>;
   upsertCompetition: (input: CompetitionUpsertInput) => Promise<Competition[]>;
@@ -128,6 +161,8 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [vetSchedule, setVetSchedule] = useState<VetScheduleItem[]>([]);
   const [hygieneTasks, setHygieneTasks] = useState<HygieneTask[]>([]);
   const [ecoMetrics, setEcoMetrics] = useState<EcoMetrics[]>([]);
+  const [ecoRecommendations, setEcoRecommendations] = useState<EcoRecommendation[]>([]);
+  const [wasteToGreenLogs, setWasteToGreenLogs] = useState<WasteToGreenLog[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [competitionReminderIds, setCompetitionReminderIds] = useState<string[]>([]);
   const [books, setBooks] = useState<BookItem[]>([]);
@@ -149,6 +184,8 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         vetRes,
         hygieneRes,
         ecoRes,
+        ecoRecRes,
+        wasteRes,
         compRes,
         reminderRes,
         bookRes,
@@ -166,6 +203,8 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         fetchVetSchedule(),
         fetchHygieneTasks(),
         fetchEcoMetrics(),
+        fetchEcoRecommendations(),
+        fetchWasteToGreenLogs(),
         fetchCompetitions(),
         fetchCompetitionReminderIds(),
         fetchBooks(),
@@ -184,6 +223,8 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setVetSchedule(vetRes.data);
       setHygieneTasks(hygieneRes.data);
       setEcoMetrics(ecoRes.data);
+      setEcoRecommendations(ecoRecRes.data);
+      setWasteToGreenLogs(wasteRes.data);
       setCompetitions(compRes.data);
       setCompetitionReminderIds(reminderRes.data);
       setBooks(bookRes.data);
@@ -246,18 +287,64 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     []
   );
 
-  const toggleHygieneComplete = useCallback(async (taskId: string, completed: boolean) => {
-    await toggleHygieneTaskCompletion(taskId, completed);
-    setHygieneTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, completedToday: completed } : task))
-    );
-  }, []);
+  const toggleHygieneComplete = useCallback(
+    async (taskId: string, completed: boolean, confirmedBy?: string, stableId?: string) => {
+      const res = await toggleHygieneTaskCompletion(taskId, completed, confirmedBy, stableId);
+      setHygieneTasks((prev) =>
+        prev.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                completedToday: res.data.completedToday,
+                confirmedBy: res.data.confirmedBy,
+                confirmedAt: res.data.confirmedAt,
+              }
+            : task
+        )
+      );
+    },
+    []
+  );
 
-  const addTrainingLog = useCallback(async (input: TrainingLogInput) => {
-    const res = await createTrainingLog(input);
+  const addTrainingLog = useCallback(async (input: TrainingLogInput, stableId?: string) => {
+    const res = await createTrainingLog(input, stableId);
     setTrainingLogs((prev) => [res.data, ...prev]);
     return res.data;
   }, []);
+
+  const addVetScheduleItem = useCallback(async (stableId: string, input: VetScheduleInput) => {
+    const res = await createVetScheduleItem(stableId, input);
+    setVetSchedule((prev) => [res.data, ...prev]);
+    return res.data;
+  }, []);
+
+  const updateVetStatus = useCallback(
+    async (stableId: string, recordId: string, status: VetScheduleItem['status']) => {
+      const res = await updateVetScheduleStatus(stableId, recordId, status);
+      setVetSchedule(res.data);
+      return res.data;
+    },
+    []
+  );
+
+  const addWasteToGreenLog = useCallback(
+    async (stableId: string, input: WasteToGreenLogInput) => {
+      const res = await createWasteToGreenLog(stableId, input);
+      setWasteToGreenLogs((prev) => [res.data, ...prev]);
+      return res.data;
+    },
+    []
+  );
+
+  const toggleEcoRecommendation = useCallback(
+    async (recommendationId: string, applied: boolean) => {
+      await toggleEcoRecommendationApplied(recommendationId, applied);
+      setEcoRecommendations((prev) =>
+        prev.map((rec) => (rec.id === recommendationId ? { ...rec, applied } : rec))
+      );
+    },
+    []
+  );
 
   const addHorseNote = useCallback(async (input: StaffHorseNoteInput) => {
     const res = await createHorseNote(input);
@@ -282,6 +369,20 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [cmpRes, stbRes] = await Promise.all([fetchComplexes(), fetchStables()]);
     setComplexes(cmpRes.data);
     setStables(stbRes.data);
+    return res.data;
+  }, []);
+
+  const upsertComplex = useCallback(async (input: ComplexUpsertInput) => {
+    const res = await saveComplexAdmin(input);
+    setComplexes(res.data);
+    return res.data;
+  }, []);
+
+  const upsertStable = useCallback(async (input: StableCreateInput) => {
+    const res = await saveStableAdmin(input);
+    const cmpRes = await fetchComplexes();
+    setStables(res.data);
+    setComplexes(cmpRes.data);
     return res.data;
   }, []);
 
@@ -336,6 +437,8 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       vetSchedule,
       hygieneTasks,
       ecoMetrics,
+      ecoRecommendations,
+      wasteToGreenLogs,
       competitions,
       competitionReminderIds,
       books,
@@ -351,10 +454,16 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       saveFeedingPlan,
       toggleHygieneComplete,
       addTrainingLog,
+      addVetScheduleItem,
+      updateVetStatus,
+      addWasteToGreenLog,
+      toggleEcoRecommendation,
       addHorseNote,
       appendIoTAlertLogs,
       resolveIoTAlert,
       addStable,
+      upsertComplex,
+      upsertStable,
       upsertStaffAssignment,
       removeStaffAssignment,
       upsertCompetition,
@@ -376,6 +485,8 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       vetSchedule,
       hygieneTasks,
       ecoMetrics,
+      ecoRecommendations,
+      wasteToGreenLogs,
       competitions,
       competitionReminderIds,
       books,
@@ -391,10 +502,16 @@ export const AppStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       saveFeedingPlan,
       toggleHygieneComplete,
       addTrainingLog,
+      addVetScheduleItem,
+      updateVetStatus,
+      addWasteToGreenLog,
+      toggleEcoRecommendation,
       addHorseNote,
       appendIoTAlertLogs,
       resolveIoTAlert,
       addStable,
+      upsertComplex,
+      upsertStable,
       upsertStaffAssignment,
       removeStaffAssignment,
       upsertCompetition,

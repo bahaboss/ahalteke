@@ -53,14 +53,15 @@ Geljekde Node.js/Express ýa-da NestJS backend birikdirilende aşakdaky REST API
 | `GET` | `/api/v1/feeding-plans?horseId=:id` | `FeedingPlan[]` | Gündelik isripsiz iýmitlendiriş tertibi (irden, günortan, agşam) |
 | `PATCH` | `/api/v1/feeding-plans/:id/complete` | `{ planId: string; completedToday: boolean }` | Nahar tapgyrynyň ýerine ýetirilendigini bellemek (`localStorage` mock) |
 | `PUT` | `/api/v1/stables/:id/feeding` | `FeedingPlan[]` | Rasion meýilnamasyny üýtgetmek ýa-da goşmak we isripçilikden tygşytlanan ot-iým mukdaryny (kg) awtomatiki hasaplamak (`localStorage` + `AppStoreContext`) |
-| `GET` | `/api/v1/training-logs?horseId=:id` | `TrainingLog[]` | Seýis tarapyndan ýazylan sport türgenleşik žurnaly |
-| `POST` | `/api/v1/training-logs` | `TrainingLog` | Täze sport türgenleşik ýazgysyny goşmak (`localStorage` mock) |
-| `GET` | `/api/v1/health/vet-schedule` | `VetScheduleItem[]` | Weterinar barlaglarynyň we waksina senenamasynyň sanawy |
-| `GET` | `/api/v1/stables/hygiene` | `HygieneTask[]` | Athananyň gündelik arassaçylyk çek-listi |
-| `PATCH` | `/api/v1/stables/hygiene/:id/complete` | `{ taskId: string; completedToday: boolean }` | Arassaçylyk tabşyrygynyň ýerine ýetirilendigini bellemek (`localStorage` mock) |
+| `GET` | `/api/v1/training-logs?horseId=:id` | `TrainingLog[]` | Seýis tarapyndan ýazylan sport türgenleşik žurnaly we ösüş grafiki maglumatlary |
+| `POST` | `/api/v1/stables/:id/logs` | `TrainingLog \| VetScheduleItem \| HygieneConfirmResult` | Täze sport türgenleşik ýazgysyny, weterinar/waksina belligini goşmak, weterinar ýagdaýyny täzelemek we arassaçylyk çek-listini jogapkär işgäriň tassyklama wagty bilen ýazmak (`localStorage` + `AppStoreContext`) |
+| `GET` | `/api/v1/health/vet-schedule` | `VetScheduleItem[]` | Weterinar barlaglarynyň we waksina senenamasynyň sanawy (`localStorage` bilen birleşdirilen) |
+| `GET` | `/api/v1/stables/hygiene` | `HygieneTask[]` | Athananyň gündelik arassaçylyk çek-listi (jogapkär işgär we tassyklama wagty bilen) |
 | `GET` | `/api/v1/eco-metrics?complexId=:id` | `EcoMetrics[]` | «Ýaşyl Athana» gün energiýasy, suw we CO₂ hasabatlary |
-| `GET` | `/api/v1/eco/dashboard?complexId=:id` | `EcoDashboardPayload` | Eco-Score (0–100), 4 KPI, hepdelik/aýlyk grafikler we 3 AI Eko-Maslahatçy teklibi |
-| `POST` | `/api/v1/eco/ai-recommendations/:id/apply` | `{ recommendationId: string; applied: boolean }` | AI Eko-Maslahatçy maslahatyny ýerine ýetirilen hökmünde bellemek (`localStorage` mock) |
+| `GET` | `/api/v1/stables/:id/eco-dashboard` | `EcoDashboardPayload` | IoT, rasion (`/staff/feeding`), arassaçylyk (`/staff/health-training`) we Waste-to-Green esasynda dinamiki Eco-Score (0–100), 4 KPI, aýlyk/hepdelik grafikler we Eko-Maslahatçy |
+| `GET` | `/api/v1/stables/:id/eco/waste-logs` | `WasteToGreenLog[]` | Organiki galyndydan bio-dökün (kg) we biogaz (m³) gündelik hasabatlarynyň sanawy (`localStorage` mock) |
+| `POST` | `/api/v1/stables/:id/eco/waste-logs` | `WasteToGreenLog` | Täze Waste-to-Green gündelik hasabatyny goşmak we Eco-Score / aýlyk grafik bilen sinhronlamak |
+| `POST` | `/api/v1/eco/ai-recommendations/:id/apply` | `{ recommendationId: string; applied: boolean }` | Eko-Maslahatçy maslahatyny ýerine ýetirilen hökmünde bellemek (`localStorage` + `AppStoreContext`) |
 
 ---
 
@@ -99,15 +100,20 @@ Geljekde Node.js/Express ýa-da NestJS backend birikdirilende aşakdaky REST API
 
 ---
 
-## 8. Merkezi Admin Paneli (`adminService.ts` — 7-nji Ädim)
+## 8. Merkezi Admin Paneli (`adminService.ts` — 12-nji Ädim)
 
 | Metod | Endpoint | Jogap Görnüşi | Düşündiriş |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/admin/overview` | `AdminOverviewData` | Ähli toplumlaryň, athanalaryň jemleýji statistikasy, Eco-Score reýting tablisasy we suw/energiýa grafiki |
+| `GET` | `/api/v1/admin/overview` | `AdminOverviewData` | Ähli toplumlaryň, athanalaryň jemleýji statistikasy, welaýat/toplum süzgüçli Eco-Score reýting tablisasy we suw/energiýa grafiki |
+| `GET` | `/api/v1/admin/overview/export` | `text/csv` (UTF-8 BOM) | Athanalaryň «Ýaşyl Reýting» (Eco-Score) tablisasyny Excel üçin CSV görnüşinde eksport etmek |
+| `POST` | `/api/v1/admin/complexes` | `EquestrianComplex[]` | Täze atçylyk sport toplumyny döretmek ýa-da bar bolan toplumy redaktirlemek (`localStorage` + `AppStoreContext`) |
+| `POST` | `/api/v1/admin/stables` | `Stable` | Täze athana döretmek we degişli atçylyk toplumyna birikdirmek |
+| `PUT` | `/api/v1/admin/stables/:id` | `Stable[]` | Bar bolan athananyň boks, ýagyş suwy, baş seýis we gün üçegi maglumatlaryny täzelemek |
 | `GET` | `/api/v1/admin/assignments` | `StaffAssignment[]` | Işgärleriň sport toplumy we athana jogapkärçilik sanawy (`localStorage` mock) |
-| `POST` | `/api/v1/admin/assignments` | `Stable \| StaffAssignment[]` | Täze athana goşmak ýa-da işgäri toplum/athana jogapkär edip bellemek/üýtgetmek |
+| `POST` | `/api/v1/admin/assignments` | `StaffAssignment[]` | Işgäri sport toplumyna we athana jogapkär edip bellemek ýa-da üýtgetmek |
 | `DELETE` | `/api/v1/admin/assignments/:id` | `StaffAssignment[]` | Işgär jogapkärçilik ýazgysyny sanawdan aýyrmak |
-| `POST` | `/api/v1/admin/content` | `Competition[] \| BookItem[]` | Ulanyjy panelinde görünýän ýaryşlary we kitaplary goşmak ýa-da üýtgetmek (göni sinhronlanýar) |
-| `DELETE` | `/api/v1/admin/content/:type/:id` | `Competition[] \| BookItem[]` | Ýaryş ýa-da kitaphana neşirini aýyrmak |
-| `PATCH` | `/api/v1/admin/applications/:id` | `AcademyApplication[]` | Aba Annaýew Akademiýasyna gelen anketanyň statusyny (`garalýar` / `söhbetdeşlik` / `tassyklandy`) üýtgetmek |
+| `POST` | `/api/v1/admin/content` | `Competition[] \| BookItem[]` | Ulanyjy panelinde görünýän ýaryşlary we kitaplary goşmak ýa-da üýtgetmek (`AppStoreContext` bilen göni sinhronlanýar) |
+| `DELETE` | `/api/v1/admin/content/competitions/:id` | `Competition[]` | Ýaryşy sanawdan aýyrmak |
+| `DELETE` | `/api/v1/admin/content/books/:id` | `BookItem[]` | Kitaphana neşirini sanawdan aýyrmak |
+| `PATCH` | `/api/v1/admin/applications/:id` | `AcademyApplication[]` | Aba Annaýew Akademiýasyna gelen anketanyň statusyny (`garalýar` / `söhbetdeşlik` / `tassyklandy` / `ret_edildi`) üýtgetmek |
 | `GET` | `/api/v1/admin/applications/export` | `text/csv` (UTF-8 BOM) | Akademiýa dalaşgärlik anketalaryny Excel üçin CSV görnüşinde eksport etmek |

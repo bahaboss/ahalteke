@@ -2,9 +2,10 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AdminApplicationsScreen,
-  AdminAssignmentsScreen,
+  AdminComplexesScreen,
   AdminContentScreen,
   AdminOverviewScreen,
+  AdminStaffScreen,
 } from '../../components/admin';
 
 export const AdminDashboardPage: React.FC = () => {
@@ -12,7 +13,8 @@ export const AdminDashboardPage: React.FC = () => {
   return (
     <AdminOverviewScreen
       onNavigateTab={(tab) => {
-        if (tab === 'assignments') navigate('/admin/complexes');
+        if (tab === 'complexes' || tab === 'assignments') navigate('/admin/complexes');
+        if (tab === 'staff') navigate('/admin/staff');
         if (tab === 'content') navigate('/admin/content');
         if (tab === 'applications') navigate('/admin/applications');
       }}
@@ -21,11 +23,11 @@ export const AdminDashboardPage: React.FC = () => {
 };
 
 export const AdminComplexesPage: React.FC = () => {
-  return <AdminAssignmentsScreen />;
+  return <AdminComplexesScreen />;
 };
 
 export const AdminStaffPage: React.FC = () => {
-  return <AdminAssignmentsScreen />;
+  return <AdminStaffScreen />;
 };
 
 export const AdminContentPage: React.FC = () => {

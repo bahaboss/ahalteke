@@ -1,6 +1,6 @@
 # Smart & Green Ahalteke — Umumy Design System (Dizaýn Ulgamy)
 
-Bu resminama **«Smart & Green Ahalteke»** platformasynyň ähli ekranlary (Landing, Ulanyjy portaly, Işgär/Seýis paneli we geljekki Admin paneli) üçin ýeke-täk wizual we ergonomik düzgünleri kesgitleýär.
+Bu resminama **«Smart & Green Ahalteke»** platformasynyň ähli 5 Layout gabygy (Landing, Giriş/Agza bolmak, Ulanyjy paneli, Işgär/Seýis paneli we Merkezi Admin paneli) üçin ýeke-täk wizual we ergonomik düzgünleri kesgitleýär.
 
 ---
 
@@ -13,6 +13,7 @@ Platforma milli türkmen ahalteke mirasynyň asyllylygyny häzirki zaman «Smart
 | `neutral.canvas` | `#F8FAF9` | **60%** | Esasy arassa sahypa fony (ýumşak zümrüt öwüşginli ak-çal) |
 | `neutral.surface` | `#FFFFFF` | **30%** | Kartoçkalar, modallar we maglumat bloklary |
 | `neutral.surfaceMuted` | `#EEF3F1` | **30%** | Ikinji derejeli bölekler, tablaryň fony |
+| `neutral.textPrimary` | `#0F172A` | — | Esasy goýy tekst we tablisa ýazgylary |
 | `neutral.borderHairline` | `#DCE6E1` | — | 1px inçe serhet we bölüji çyzyklar |
 | `brand.emeraldDeep` | `#064E3B` | **10% (Esasy)** | Brend nyşany, esasy hereket düwmeleri (CTA), PWA tema reňki |
 | `brand.emeraldAccent` | `#10B981` | **10% (Aksent)** | Ekologiýa görkezijileri, işjeň nyşanlar, gün energiýasy |
@@ -20,10 +21,10 @@ Platforma milli türkmen ahalteke mirasynyň asyllylygyny häzirki zaman «Smart
 
 ### Semantik Ýagdaý Reňkleri
 Ýagdaýlar **hiç haçan diňe reňk arkaly** berilmeýär; elmydama düşnükli türkmençe ýazgy ýa-da nyşan bilen bile görkezilýär:
-- **Kadaly (`healthy`)**: `#059669` + `#ECFDF5` fon
-- **Üns bermeli (`warning`)**: `#B45309` + `#FFFBEB` fon
-- **Gyssagly (`critical`)**: `#DC2626` + `#FEF2F2` fon
-- **Maglumat (`info`)**: `#0F766E` + `#F0FDFA` fon
+- **Kadaly / Kabul edildi (`healthy`)**: `#059669` + `#ECFDF5` fon
+- **Garaşylýar / Üns bermeli (`warning`)**: `#B45309` + `#FFFBEB` fon
+- **Söhbetdeşlik / Maglumat (`info`)**: `#0369A1` / `#0F766E` + `#F0FDFA` fon
+- **Gyssagly / Ret edildi (`critical`)**: `#EF4444` / `#DC2626` + `#FEF2F2` fon
 
 ---
 

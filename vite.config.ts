@@ -85,6 +85,32 @@ export default defineConfig(() => {
           type: 'module',
         },
       }),
+      // vite-plugin-pwa injects an HMR-based dev SW bridge that invokes
+      // import.meta.hot.send(), which throws when server.hmr is disabled.
+      // Service worker registration is already handled via virtual:pwa-register in src/main.tsx.
+      (() => {
+        let hmrDisabled = process.env.DISABLE_HMR === 'true';
+        return {
+          name: 'pwa-strip-hmr-bridge-when-hmr-disabled',
+          apply: 'serve' as const,
+          enforce: 'post' as const,
+          configResolved(config: { server: { hmr?: unknown } }) {
+            hmrDisabled = config.server.hmr === false;
+          },
+          transformIndexHtml: {
+            order: 'post' as const,
+            handler(html: string): string {
+              if (!hmrDisabled) {
+                return html;
+              }
+              return html.replace(
+                /<script id="vite-plugin-pwa:register-dev-sw"[\s\S]*?<\/script>\s*/g,
+                '',
+              );
+            },
+          },
+        };
+      })(),
       // Copies src/assets into dist/ so root-relative URLs like
       // "/src/assets/images/..." (e.g. generate_image output) still resolve
       // in production builds. Do not remove.

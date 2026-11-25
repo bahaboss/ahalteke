@@ -21,6 +21,7 @@ const VALID_APP_STATUSES: ReadonlySet<AcademyApplicationStatus> = new Set([
   'garalýar',
   'söhbetdeşlik',
   'tassyklandy',
+  'ret_edildi',
 ]);
 
 function readStoredStringArray(key: string): string[] {

@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowUpDown,
   Award,
   Building2,
+  CheckCircle2,
+  Download,
   Droplets,
   Leaf,
   Search,
@@ -10,52 +12,76 @@ import {
   Users,
   Warehouse,
 } from 'lucide-react';
-import { fetchAdminOverview } from '../../services';
-import type { AdminOverviewData, ComplexEcoSummaryPoint } from '../../types';
-import { Card } from '../common';
+import { computeAdminOverviewData, exportEcoRankingsCsv } from '../../services';
+import { useAppStore } from '../../store';
+import type { ComplexEcoSummaryPoint } from '../../types';
+import { Button, Card } from '../common';
 
 type ChartMetric = 'water' | 'energy';
-type SortKey = 'ecoScore' | 'waterSavedLiters' | 'solarEnergyKwh';
+type SortKey = 'ecoScore' | 'occupancyRate' | 'waterSavedLiters' | 'solarEnergyKwh';
 
 export interface AdminOverviewScreenProps {
-  onNavigateTab?: (tab: 'assignments' | 'content' | 'applications') => void;
+  onNavigateTab?: (
+    tab: 'assignments' | 'complexes' | 'staff' | 'content' | 'applications'
+  ) => void;
 }
 
 export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavigateTab }) => {
-  const [data, setData] = useState<AdminOverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { complexes, stables, staffAssignments, academyApplications, ecoMetrics, isHydrating } =
+    useAppStore();
+
   const [chartMetric, setChartMetric] = useState<ChartMetric>('water');
   const [selectedComplexId, setSelectedComplexId] = useState<string>('');
+  const [tableRegionFilter, setTableRegionFilter] = useState<string>('all');
   const [tableComplexFilter, setTableComplexFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('ecoScore');
+  const [exportToast, setExportToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const res = await fetchAdminOverview();
-        if (!active) return;
-        setData(res.data);
-        if (res.data.complexSeries.length > 0) {
-          setSelectedComplexId((prev) => prev || res.data.complexSeries[0].complexId);
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const handleExportEcoCsv = () => {
+    const list = filteredRankings.length > 0 ? filteredRankings : data.stableRankings;
+    const fileName = exportEcoRankingsCsv(list);
+    const msg = `${list.length} athananyň «Ýaşyl Reýting» hasabaty CSV görnüşinde göçürildi (${fileName}).`;
+    setExportToast(msg);
+    window.setTimeout(() => {
+      setExportToast((curr) => (curr === msg ? null : curr));
+    }, 4500);
+  };
+
+  const data = useMemo(
+    () =>
+      computeAdminOverviewData({
+        complexes,
+        stables,
+        staffAssignments,
+        academyApplications,
+        ecoMetrics,
+      }),
+    [complexes, stables, staffAssignments, academyApplications, ecoMetrics]
+  );
+
+  const uniqueRegions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of complexes) {
+      if (c.region) set.add(c.region);
+    }
+    return Array.from(set);
+  }, [complexes]);
+
+  const occupancySummary = useMemo(() => {
+    const totalBoxes = stables.reduce((sum, s) => sum + s.boxCount, 0);
+    const occupiedBoxes = stables.reduce((sum, s) => sum + s.occupiedBoxes, 0);
+    const percent = totalBoxes > 0 ? Math.round((occupiedBoxes / totalBoxes) * 100) : 0;
+    return { totalBoxes, occupiedBoxes, percent };
+  }, [stables]);
 
   const filteredRankings = useMemo(() => {
-    if (!data) return [];
     const q = searchQuery.trim().toLowerCase();
     return data.stableRankings
       .filter((item) => {
+        if (tableRegionFilter !== 'all' && item.region !== tableRegionFilter) {
+          return false;
+        }
         if (tableComplexFilter !== 'all' && item.complexId !== tableComplexFilter) {
           return false;
         }
@@ -64,28 +90,35 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
           item.stableName.toLowerCase().includes(q) ||
           item.stableCode.toLowerCase().includes(q) ||
           item.complexName.toLowerCase().includes(q) ||
+          item.region.toLowerCase().includes(q) ||
           item.headSeisName.toLowerCase().includes(q)
         );
       })
-      .sort((a, b) => b[sortKey] - a[sortKey]);
-  }, [data, tableComplexFilter, searchQuery, sortKey]);
+      .sort((a, b) => {
+        if (sortKey === 'occupancyRate') {
+          const rateA = a.boxCount > 0 ? a.occupiedBoxes / a.boxCount : 0;
+          const rateB = b.boxCount > 0 ? b.occupiedBoxes / b.boxCount : 0;
+          return rateB - rateA;
+        }
+        return b[sortKey] - a[sortKey];
+      });
+  }, [data.stableRankings, tableRegionFilter, tableComplexFilter, searchQuery, sortKey]);
 
   const activeComplexPoint: ComplexEcoSummaryPoint | undefined = useMemo(() => {
-    if (!data) return undefined;
     return (
       data.complexSeries.find((c) => c.complexId === selectedComplexId) ?? data.complexSeries[0]
     );
-  }, [data, selectedComplexId]);
+  }, [data.complexSeries, selectedComplexId]);
 
   const chartMaxValue = useMemo(() => {
-    if (!data || data.complexSeries.length === 0) return 1;
+    if (data.complexSeries.length === 0) return 1;
     const values = data.complexSeries.map((c) =>
       chartMetric === 'water' ? c.waterSavedLiters : c.solarEnergyKwh
     );
     return Math.max(...values, 1);
-  }, [data, chartMetric]);
+  }, [data.complexSeries, chartMetric]);
 
-  if (loading || !data) {
+  if (isHydrating && complexes.length === 0) {
     return (
       <div className="space-y-6" aria-busy="true" aria-label="Umumy gözegçilik maglumatlary ýüklenýär">
         <div className="h-9 w-72 rounded-xl bg-[#E6EFEA] animate-pulse" />
@@ -107,7 +140,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
           <p className="text-xs font-semibold text-[#059669]">
             Merkezi Admin Gözegçiligi · Ähli Welaýatlar
           </p>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-[#0F241D] leading-tight text-balance">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-[#0F172A] leading-tight text-balance">
             Umumy Gözegçilik we Ýaşyl Reýting
           </h1>
           <p className="text-sm text-[#415850] max-w-2xl">
@@ -116,25 +149,53 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
           </p>
         </div>
 
-        {onNavigateTab && (
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => onNavigateTab('assignments')}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-[#064E3B] text-white text-xs sm:text-sm font-semibold hover:bg-[#053D2E] transition-colors cursor-pointer whitespace-nowrap"
-            >
-              Athana we işgär goş
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('applications')}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-white border border-[#DCE6E1] text-[#064E3B] text-xs sm:text-sm font-semibold hover:bg-[#EEF3F1] transition-colors cursor-pointer whitespace-nowrap tabular-nums"
-            >
-              Garaşýan anketalar: {data.totals.pendingApplicationsCount}
-            </button>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button
+            variant="gold"
+            size="md"
+            leftIcon={<Download className="w-4 h-4" />}
+            onClick={handleExportEcoCsv}
+            disabled={data.stableRankings.length === 0}
+          >
+            Ýaşyl Reýting CSV
+          </Button>
+          {onNavigateTab && (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigateTab('complexes')}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-[#064E3B] text-white text-xs sm:text-sm font-semibold hover:bg-[#053D2E] transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Toplum / Athana goş
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigateTab('staff')}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-white border border-[#DCE6E1] text-[#064E3B] text-xs sm:text-sm font-semibold hover:bg-[#EEF3F1] transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Işgär belle
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigateTab('applications')}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-white border border-[#D4AF37]/60 text-[#064E3B] text-xs sm:text-sm font-semibold hover:bg-[#FFFBEB] transition-colors cursor-pointer whitespace-nowrap font-mono tabular-nums"
+              >
+                Garaşýan anketalar: {data.totals.pendingApplicationsCount}
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      {exportToast && (
+        <div
+          role="status"
+          className="rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] px-4 py-3 flex items-center gap-2.5 text-sm text-[#064E3B]"
+        >
+          <CheckCircle2 className="w-4 h-4 text-[#059669] shrink-0" aria-hidden="true" />
+          <span>{exportToast}</span>
+        </div>
+      )}
 
       {/* 4 sany Jemleýji Milli KPI Kartoçkasy */}
       <section aria-label="Jemleýji statistika" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -143,14 +204,15 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
             <span>Toplumlar we Athanalar</span>
             <Building2 className="w-4 h-4 text-[#064E3B]" aria-hidden="true" />
           </div>
-          <p className="font-mono tabular-nums text-3xl font-bold text-[#0F241D]">
+          <p className="font-mono tabular-nums text-3xl font-bold text-[#0F172A]">
             {data.totals.complexCount}
             <span className="text-base font-medium text-[#647A72] ml-1.5">
               / {data.totals.stableCount} athana
             </span>
           </p>
-          <p className="text-xs text-[#415850] tabular-nums">
-            Işjeň berkidilen işgärler: <strong className="text-[#064E3B]">{data.totals.staffCount}</strong>
+          <p className="text-xs text-[#415850] font-mono tabular-nums">
+            Boks dolulygy: <strong className="text-[#064E3B]">{occupancySummary.percent}%</strong> (
+            {occupancySummary.occupiedBoxes}/{occupancySummary.totalBoxes})
           </p>
         </Card>
 
@@ -159,11 +221,13 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
             <span>Umumy Ahalteke Bedewi</span>
             <Users className="w-4 h-4 text-[#059669]" aria-hidden="true" />
           </div>
-          <p className="font-mono tabular-nums text-3xl font-bold text-[#0F241D]">
+          <p className="font-mono tabular-nums text-3xl font-bold text-[#0F172A]">
             {data.totals.horseCount.toLocaleString('en-US').replace(/,/g, ' ')}
           </p>
-          <p className="text-xs text-[#415850]">
-            Ähli 5 welaýat, Aşgabat we Arkadag boýunça
+          <p className="text-xs text-[#415850] tabular-nums">
+            Işjeň işgärler: <strong className="text-[#064E3B]">{data.totals.staffCount}</strong> ·
+            Garaşýan anketalar:{' '}
+            <strong className="text-[#B45309]">{data.totals.pendingApplicationsCount}</strong>
           </p>
         </Card>
 
@@ -190,7 +254,8 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
             {(data.totals.totalWaterSavedLiters / 1000).toFixed(1)} müň L
           </p>
           <p className="text-xs text-[#415850] font-mono tabular-nums">
-            + {data.totals.totalSolarEnergyKwh.toLocaleString('en-US').replace(/,/g, ' ')} kWt ýaşyl energiýa
+            + {data.totals.totalSolarEnergyKwh.toLocaleString('en-US').replace(/,/g, ' ')} kWt ýaşyl
+            energiýa
           </p>
         </Card>
       </section>
@@ -200,7 +265,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
         <Card padding="md" className="xl:col-span-8 bg-white flex flex-col justify-between gap-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="font-display text-lg sm:text-xl font-bold text-[#0F241D]">
+              <h2 className="font-display text-lg sm:text-xl font-bold text-[#0F172A]">
                 Toplumlar Boýunça Suw we Energiýa Tygşytlylygy
               </h2>
               <p className="text-xs text-[#647A72] mt-0.5">
@@ -222,7 +287,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                   'min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap',
                   chartMetric === 'water'
                     ? 'bg-white text-[#064E3B] shadow-xs'
-                    : 'text-[#415850] hover:text-[#0F241D]',
+                    : 'text-[#415850] hover:text-[#0F172A]',
                 ].join(' ')}
               >
                 <Droplets className="w-3.5 h-3.5 text-[#059669]" aria-hidden="true" />
@@ -237,7 +302,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                   'min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap',
                   chartMetric === 'energy'
                     ? 'bg-white text-[#064E3B] shadow-xs'
-                    : 'text-[#415850] hover:text-[#0F241D]',
+                    : 'text-[#415850] hover:text-[#0F172A]',
                 ].join(' ')}
               >
                 <Sun className="w-3.5 h-3.5 text-[#D4AF37]" aria-hidden="true" />
@@ -259,7 +324,6 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                     : 'Toplumlar boýunça gün energiýasynyň grafiki'
                 }
               >
-                {/* Kese tor çyzyklary */}
                 {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                   const y = 200 - ratio * 164;
                   const val = Math.round(chartMaxValue * ratio);
@@ -332,7 +396,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                         x={x + barWidth / 2}
                         y={y - 7}
                         textAnchor="middle"
-                        className="fill-[#0F241D] text-[10px] font-mono font-semibold"
+                        className="fill-[#0F172A] text-[10px] font-mono font-semibold"
                       >
                         {chartMetric === 'water'
                           ? `${(value / 1000).toFixed(1)}k`
@@ -365,7 +429,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                 <p className="text-xs font-semibold text-[#059669]">
                   Saýlanan Toplum · {activeComplexPoint.region}
                 </p>
-                <h3 className="font-display text-lg font-bold text-[#0F241D] leading-snug">
+                <h3 className="font-display text-lg font-bold text-[#0F172A] leading-snug">
                   {activeComplexPoint.complexName}
                 </h3>
                 <p className="text-xs text-[#647A72]">
@@ -385,19 +449,19 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                 </div>
                 <div className="py-3 flex items-center justify-between text-sm">
                   <span className="text-[#415850]">Suw tygşytlylygy</span>
-                  <span className="font-mono tabular-nums font-semibold text-[#0F241D]">
+                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">
                     {activeComplexPoint.waterSavedLiters.toLocaleString('en-US').replace(/,/g, ' ')} L
                   </span>
                 </div>
                 <div className="py-3 flex items-center justify-between text-sm">
                   <span className="text-[#415850]">Gün energiýasy</span>
-                  <span className="font-mono tabular-nums font-semibold text-[#0F241D]">
+                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">
                     {activeComplexPoint.solarEnergyKwh.toLocaleString('en-US').replace(/,/g, ' ')} kWt
                   </span>
                 </div>
                 <div className="py-3 flex items-center justify-between text-sm">
                   <span className="text-[#415850]">Athana / Bedew sany</span>
-                  <span className="font-mono tabular-nums font-semibold text-[#0F241D]">
+                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">
                     {activeComplexPoint.stableCount} / {activeComplexPoint.horseCount}
                   </span>
                 </div>
@@ -405,7 +469,10 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
 
               <button
                 type="button"
-                onClick={() => setTableComplexFilter(activeComplexPoint.complexId)}
+                onClick={() => {
+                  setTableRegionFilter('all');
+                  setTableComplexFilter(activeComplexPoint.complexId);
+                }}
                 className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-[#ECFDF5] text-[#064E3B] text-xs font-semibold hover:bg-[#D1FAE5] transition-colors cursor-pointer"
               >
                 Tablisada diňe şu toplumyň athanalaryny gör
@@ -417,50 +484,22 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
 
       {/* Iň ýokary «Ýaşyl Reýtingli» (Eco-Score) Athanalaryň Tablisasy */}
       <Card padding="none" className="bg-white overflow-hidden">
-        <div className="p-5 sm:p-6 border-b border-[#DCE6E1] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display text-lg sm:text-xl font-bold text-[#0F241D]">
-              Iň Ýokary «Ýaşyl Reýtingli» Athanalaryň Tablisasy
-            </h2>
-            <p className="text-xs text-[#647A72] mt-0.5 tabular-nums">
-              Jemi {filteredRankings.length} athana görkezilýär · Eco-Score, suw we gün energiýasy boýunça tertiplenýär
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5">
-            <div className="relative">
-              <Search
-                className="w-4 h-4 text-[#647A72] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                aria-hidden="true"
-              />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Athana, kod ýa-da seýis gözle..."
-                aria-label="Athana gözlegi"
-                className="w-full sm:w-56 min-h-[42px] pl-9 pr-3 rounded-xl bg-[#F8FAF9] border border-[#DCE6E1] text-xs sm:text-sm text-[#0F241D] placeholder:text-[#647A72] focus:bg-white focus:outline-2 focus:outline-[#10B981]"
-              />
+        <div className="p-5 sm:p-6 border-b border-[#DCE6E1] flex flex-col gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg sm:text-xl font-bold text-[#0F172A]">
+                Iň Ýokary «Ýaşyl Reýtingli» Athanalaryň Tablisasy
+              </h2>
+              <p className="text-xs text-[#647A72] mt-0.5 tabular-nums">
+                Jemi {filteredRankings.length} athana görkezilýär · Welaýat, toplum we ekologik görkezijiler boýunça süzülýär
+              </p>
             </div>
 
-            <select
-              value={tableComplexFilter}
-              onChange={(e) => setTableComplexFilter(e.target.value)}
-              aria-label="Toplum boýunça süzgüç"
-              className="min-h-[42px] px-3 rounded-xl bg-[#F8FAF9] border border-[#DCE6E1] text-xs sm:text-sm text-[#0F241D] focus:bg-white focus:outline-2 focus:outline-[#10B981] cursor-pointer"
-            >
-              <option value="all">Ähli toplumlary görkez</option>
-              {data.complexSeries.map((c) => (
-                <option key={c.complexId} value={c.complexId}>
-                  {c.shortName} ({c.stableCount})
-                </option>
-              ))}
-            </select>
-
-            <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#EEF3F1]">
+            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-[#EEF3F1] self-start lg:self-auto">
               {(
                 [
                   { key: 'ecoScore' as SortKey, label: 'Eco-Score' },
+                  { key: 'occupancyRate' as SortKey, label: 'Dolulyk' },
                   { key: 'waterSavedLiters' as SortKey, label: 'Suw' },
                   { key: 'solarEnergyKwh' as SortKey, label: 'Energiýa' },
                 ]
@@ -473,7 +512,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                     'min-h-[34px] px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap',
                     sortKey === opt.key
                       ? 'bg-white text-[#064E3B] shadow-xs'
-                      : 'text-[#415850] hover:text-[#0F241D]',
+                      : 'text-[#415850] hover:text-[#0F172A]',
                   ].join(' ')}
                 >
                   <ArrowUpDown className="w-3 h-3" aria-hidden="true" />
@@ -482,17 +521,64 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
               ))}
             </div>
           </div>
+
+          {/* Gözleg, Welaýat we Toplum Süzgüçleri */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="relative">
+              <Search
+                className="w-4 h-4 text-[#647A72] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Athana, kod, welaýat ýa-da seýis gözle..."
+                aria-label="Athana gözlegi"
+                className="w-full min-h-[42px] pl-9 pr-3 rounded-xl bg-[#F8FAF9] border border-[#DCE6E1] text-xs sm:text-sm text-[#0F172A] placeholder:text-[#647A72] focus:bg-white focus:outline-2 focus:outline-[#10B981]"
+              />
+            </div>
+
+            <select
+              value={tableRegionFilter}
+              onChange={(e) => setTableRegionFilter(e.target.value)}
+              aria-label="Welaýat boýunça süzgüç"
+              className="w-full min-h-[42px] px-3 rounded-xl bg-[#F8FAF9] border border-[#DCE6E1] text-xs sm:text-sm text-[#0F172A] focus:bg-white focus:outline-2 focus:outline-[#10B981] cursor-pointer"
+            >
+              <option value="all">Ähli welaýatlar ({uniqueRegions.length})</option>
+              {uniqueRegions.map((region) => (
+                <option key={region} value={region}>
+                  {region}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={tableComplexFilter}
+              onChange={(e) => setTableComplexFilter(e.target.value)}
+              aria-label="Toplum boýunça süzgüç"
+              className="w-full min-h-[42px] px-3 rounded-xl bg-[#F8FAF9] border border-[#DCE6E1] text-xs sm:text-sm text-[#0F172A] focus:bg-white focus:outline-2 focus:outline-[#10B981] cursor-pointer"
+            >
+              <option value="all">Ähli sport toplumlary</option>
+              {data.complexSeries.map((c) => (
+                <option key={c.complexId} value={c.complexId}>
+                  {c.shortName} ({c.stableCount})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {filteredRankings.length === 0 ? (
           <div className="p-10 text-center space-y-3">
             <Warehouse className="w-8 h-8 text-[#647A72] mx-auto" aria-hidden="true" />
-            <p className="text-sm font-semibold text-[#0F241D]">
+            <p className="text-sm font-semibold text-[#0F172A]">
               Süzgüje gabat gelýän athana tapylmady
             </p>
             <button
               type="button"
               onClick={() => {
+                setTableRegionFilter('all');
                 setTableComplexFilter('all');
                 setSearchQuery('');
               }}
@@ -503,7 +589,7 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[760px]">
+            <table className="w-full text-left border-collapse min-w-[780px]">
               <thead>
                 <tr className="bg-[#F8FAF9] border-b border-[#DCE6E1] text-[11px] font-semibold text-[#647A72]">
                   <th className="py-3 pl-6 pr-3 w-12">#</th>
@@ -518,21 +604,18 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
               </thead>
               <tbody className="divide-y divide-[#EEF3F1] text-sm">
                 {filteredRankings.map((row, idx) => (
-                  <tr
-                    key={row.stableId}
-                    className="hover:bg-[#F8FAF9] transition-colors"
-                  >
+                  <tr key={row.stableId} className="hover:bg-[#F8FAF9] transition-colors">
                     <td className="py-3.5 pl-6 pr-3 font-mono tabular-nums text-xs font-semibold text-[#647A72]">
                       {idx + 1}
                     </td>
                     <td className="py-3.5 px-3">
-                      <p className="font-semibold text-[#0F241D] leading-snug">{row.stableName}</p>
+                      <p className="font-semibold text-[#0F172A] leading-snug">{row.stableName}</p>
                       <p className="text-xs text-[#647A72] font-mono">
                         {row.stableCode} · {row.solarRoofEnabled ? 'Gün üçekli' : 'Adaty üçek'}
                       </p>
                     </td>
                     <td className="py-3.5 px-3">
-                      <p className="text-[#0F241D] text-xs sm:text-sm font-medium">
+                      <p className="text-[#0F172A] text-xs sm:text-sm font-medium">
                         {row.complexName}
                       </p>
                       <p className="text-xs text-[#647A72]">{row.region}</p>
@@ -540,13 +623,13 @@ export const AdminOverviewScreen: React.FC<AdminOverviewScreenProps> = ({ onNavi
                     <td className="py-3.5 px-3 text-xs sm:text-sm text-[#415850]">
                       {row.headSeisName}
                     </td>
-                    <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs sm:text-sm text-[#0F241D]">
+                    <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs sm:text-sm text-[#0F172A]">
                       {row.occupiedBoxes} / {row.boxCount}
                     </td>
-                    <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs sm:text-sm text-[#0F241D]">
+                    <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs sm:text-sm text-[#0F172A]">
                       {row.waterSavedLiters.toLocaleString('en-US').replace(/,/g, ' ')}
                     </td>
-                    <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs sm:text-sm text-[#0F241D]">
+                    <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs sm:text-sm text-[#0F172A]">
                       {row.solarEnergyKwh.toLocaleString('en-US').replace(/,/g, ' ')}
                     </td>
                     <td className="py-3.5 pl-3 pr-6 text-right">

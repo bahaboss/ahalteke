@@ -44,6 +44,11 @@ const STATUS_META: Record<
     textColor: 'text-[#065F46]',
     dotColor: 'bg-[#10B981]',
   },
+  ret_edildi: {
+    label: 'Ret edildi',
+    textColor: 'text-[#EF4444]',
+    dotColor: 'bg-[#EF4444]',
+  },
 };
 
 const EXPERIENCE_OPTIONS: { value: AcademyApplication['experienceLevel']; label: string }[] = [

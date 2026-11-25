@@ -11,6 +11,9 @@ import type {
   Competition,
   CompetitionUpsertInput,
   ComplexEcoSummaryPoint,
+  ComplexUpsertInput,
+  EcoMetrics,
+  EquestrianComplex,
   Stable,
   StableCreateInput,
   StableEcoRankingItem,
@@ -30,6 +33,8 @@ import {
   addCustomStableToStore,
   getAllComplexesSync,
   getAllStablesSync,
+  upsertComplexInStore,
+  upsertStableInStore,
 } from './complexService';
 
 const ADMIN_ASSIGNMENTS_STORAGE_KEY = 'smart_green_ahalteke_admin_assignments_v1';
@@ -82,102 +87,127 @@ function computeStableEcoScore(stable: Stable, complexBaseScore: number): number
   return Math.max(68, Math.min(99, raw));
 }
 
-// TODO: [BACKEND_API] GET /api/v1/admin/overview — Ähli toplumlaryň we athanalaryň jemleýji statistikasyny we Ýaşyl Reýtingini almak.
-export async function fetchAdminOverview(): Promise<ApiResponse<AdminOverviewData>> {
-  return mockRequest(() => {
-    const complexes = getAllComplexesSync();
-    const stables = getAllStablesSync();
-    const assignments = readStoredAssignments();
-    const applications = getAllAcademyApplicationsSync();
+export interface AdminOverviewComputeParams {
+  complexes: EquestrianComplex[];
+  stables: Stable[];
+  staffAssignments: StaffAssignment[];
+  academyApplications: AcademyApplication[];
+  ecoMetrics?: EcoMetrics[];
+}
 
-    const ecoByComplex = new Map(mockEcoMetrics.map((m) => [m.complexId, m]));
+export function computeAdminOverviewData({
+  complexes,
+  stables,
+  staffAssignments,
+  academyApplications,
+  ecoMetrics = mockEcoMetrics,
+}: AdminOverviewComputeParams): AdminOverviewData {
+  const ecoByComplex = new Map(ecoMetrics.map((m) => [m.complexId, m]));
 
-    const stableRankings: StableEcoRankingItem[] = stables
-      .map((stable) => {
-        const complex = complexes.find((c) => c.id === stable.complexId);
-        const complexEco = ecoByComplex.get(stable.complexId);
-        const baseScore =
-          complexEco?.ecoRatingScore ??
-          (complex?.ecoCertificationLevel === 'Altyn Ýaşyl'
-            ? 94
-            : complex?.ecoCertificationLevel === 'Zümrüt Ýaşyl'
-              ? 92
-              : 86);
-        const ecoScore = computeStableEcoScore(stable, baseScore);
-        const solarEnergyKwh = stable.solarRoofEnabled
-          ? Math.round((complex?.solarCapacityKw ?? 180) * 1.42 + stable.boxCount * 14)
-          : Math.round(stable.boxCount * 6);
-        const waterSavedLiters = Math.round(
-          stable.rainwaterHarvestingLiters + stable.occupiedBoxes * 280
-        );
-
-        return {
-          stableId: stable.id,
-          stableName: stable.name,
-          stableCode: stable.code,
-          complexId: stable.complexId,
-          complexName: complex?.name ?? 'Atçylyk Sport Toplumy',
-          region: complex?.region ?? 'Türkmenistan',
-          headSeisName: stable.headSeisName,
-          occupiedBoxes: stable.occupiedBoxes,
-          boxCount: stable.boxCount,
-          solarRoofEnabled: stable.solarRoofEnabled,
-          ecoScore,
-          waterSavedLiters,
-          solarEnergyKwh,
-          airQualityIndex: stable.airQualityIndex,
-        };
-      })
-      .sort((a, b) => b.ecoScore - a.ecoScore);
-
-    const complexSeries: ComplexEcoSummaryPoint[] = complexes.map((complex) => {
-      const relatedStables = stableRankings.filter((s) => s.complexId === complex.id);
-      const waterSavedLiters =
-        relatedStables.reduce((sum, s) => sum + s.waterSavedLiters, 0) || 12000;
-      const solarEnergyKwh =
-        relatedStables.reduce((sum, s) => sum + s.solarEnergyKwh, 0) ||
-        Math.round(complex.solarCapacityKw * 3.1);
-      const avgEcoScore = relatedStables.length
-        ? Math.round(
-            relatedStables.reduce((sum, s) => sum + s.ecoScore, 0) / relatedStables.length
-          )
-        : 88;
+  const stableRankings: StableEcoRankingItem[] = stables
+    .map((stable) => {
+      const complex = complexes.find((c) => c.id === stable.complexId);
+      const complexEco = ecoByComplex.get(stable.complexId);
+      const baseScore =
+        complexEco?.ecoRatingScore ??
+        (complex?.ecoCertificationLevel === 'Altyn Ýaşyl'
+          ? 94
+          : complex?.ecoCertificationLevel === 'Zümrüt Ýaşyl'
+            ? 92
+            : 86);
+      const ecoScore = computeStableEcoScore(stable, baseScore);
+      const solarEnergyKwh = stable.solarRoofEnabled
+        ? Math.round((complex?.solarCapacityKw ?? 180) * 1.42 + stable.boxCount * 14)
+        : Math.round(stable.boxCount * 6);
+      const waterSavedLiters = Math.round(
+        stable.rainwaterHarvestingLiters + stable.occupiedBoxes * 280
+      );
 
       return {
-        complexId: complex.id,
-        complexName: complex.name,
-        shortName: shortenComplexName(complex.name),
-        region: complex.region,
-        stableCount: relatedStables.length,
-        horseCount: complex.totalHorses,
-        avgEcoScore,
+        stableId: stable.id,
+        stableName: stable.name,
+        stableCode: stable.code,
+        complexId: stable.complexId,
+        complexName: complex?.name ?? 'Atçylyk Sport Toplumy',
+        region: complex?.region ?? 'Türkmenistan',
+        headSeisName: stable.headSeisName,
+        occupiedBoxes: stable.occupiedBoxes,
+        boxCount: stable.boxCount,
+        solarRoofEnabled: stable.solarRoofEnabled,
+        ecoScore,
         waterSavedLiters,
         solarEnergyKwh,
-        certificationLevel: complex.ecoCertificationLevel,
+        airQualityIndex: stable.airQualityIndex,
       };
-    });
+    })
+    .sort((a, b) => b.ecoScore - a.ecoScore);
 
-    const avgEcoScore = stableRankings.length
+  const complexSeries: ComplexEcoSummaryPoint[] = complexes.map((complex) => {
+    const relatedStables = stableRankings.filter((s) => s.complexId === complex.id);
+    const waterSavedLiters =
+      relatedStables.reduce((sum, s) => sum + s.waterSavedLiters, 0) || 12000;
+    const solarEnergyKwh =
+      relatedStables.reduce((sum, s) => sum + s.solarEnergyKwh, 0) ||
+      Math.round(complex.solarCapacityKw * 3.1);
+    const avgEcoScore = relatedStables.length
       ? Math.round(
-          stableRankings.reduce((sum, s) => sum + s.ecoScore, 0) / stableRankings.length
+          relatedStables.reduce((sum, s) => sum + s.ecoScore, 0) / relatedStables.length
         )
-      : 90;
+      : complex.ecoCertificationLevel === 'Altyn Ýaşyl'
+        ? 94
+        : complex.ecoCertificationLevel === 'Zümrüt Ýaşyl'
+          ? 91
+          : 86;
 
     return {
-      totals: {
-        complexCount: complexes.length,
-        stableCount: stables.length,
-        horseCount: complexes.reduce((sum, c) => sum + c.totalHorses, 0),
-        staffCount: assignments.filter((a) => a.status === 'işjeň').length,
-        avgEcoScore,
-        totalWaterSavedLiters: stableRankings.reduce((sum, s) => sum + s.waterSavedLiters, 0),
-        totalSolarEnergyKwh: stableRankings.reduce((sum, s) => sum + s.solarEnergyKwh, 0),
-        pendingApplicationsCount: applications.filter((a) => a.status === 'garalýar').length,
-      },
-      stableRankings,
-      complexSeries,
+      complexId: complex.id,
+      complexName: complex.name,
+      shortName: shortenComplexName(complex.name),
+      region: complex.region,
+      stableCount: relatedStables.length,
+      horseCount: complex.totalHorses,
+      avgEcoScore,
+      waterSavedLiters,
+      solarEnergyKwh,
+      certificationLevel: complex.ecoCertificationLevel,
     };
-  }, 160);
+  });
+
+  const avgEcoScore = stableRankings.length
+    ? Math.round(
+        stableRankings.reduce((sum, s) => sum + s.ecoScore, 0) / stableRankings.length
+      )
+    : 90;
+
+  return {
+    totals: {
+      complexCount: complexes.length,
+      stableCount: stables.length,
+      horseCount: complexes.reduce((sum, c) => sum + c.totalHorses, 0),
+      staffCount: staffAssignments.filter((a) => a.status === 'işjeň').length,
+      avgEcoScore,
+      totalWaterSavedLiters: stableRankings.reduce((sum, s) => sum + s.waterSavedLiters, 0),
+      totalSolarEnergyKwh: stableRankings.reduce((sum, s) => sum + s.solarEnergyKwh, 0),
+      pendingApplicationsCount: academyApplications.filter((a) => a.status === 'garalýar').length,
+    },
+    stableRankings,
+    complexSeries,
+  };
+}
+
+// TODO: [BACKEND_API] GET /api/v1/admin/overview — Ähli toplumlaryň we athanalaryň jemleýji statistikasyny we Ýaşyl Reýtingini almak.
+export async function fetchAdminOverview(): Promise<ApiResponse<AdminOverviewData>> {
+  return mockRequest(
+    () =>
+      computeAdminOverviewData({
+        complexes: getAllComplexesSync(),
+        stables: getAllStablesSync(),
+        staffAssignments: readStoredAssignments(),
+        academyApplications: getAllAcademyApplicationsSync(),
+        ecoMetrics: mockEcoMetrics,
+      }),
+    160
+  );
 }
 
 // TODO: [BACKEND_API] GET /api/v1/admin/assignments — Işgärleriň toplum we athana jogapkärçilik sanawyny almak.
@@ -185,7 +215,129 @@ export async function fetchStaffAssignments(): Promise<ApiResponse<StaffAssignme
   return mockRequest(() => readStoredAssignments(), 130);
 }
 
-// TODO: [BACKEND_API] POST /api/v1/admin/assignments — Täze athana döretmek we degişli atçylyk toplumyna birikdirmek.
+// TODO: [BACKEND_API] POST /api/v1/admin/complexes — Täze atçylyk sport toplumyny goşmak ýa-da bar bolan toplumy täzelemek.
+export async function saveComplexAdmin(
+  input: ComplexUpsertInput
+): Promise<ApiResponse<EquestrianComplex[]>> {
+  const name = input.name.trim().replace(/\s+/g, ' ').slice(0, 120);
+  const region = input.region.trim().replace(/\s+/g, ' ').slice(0, 60);
+  const address = input.address.trim().replace(/\s+/g, ' ').slice(0, 160);
+  const description = input.description.trim().replace(/\s+/g, ' ').slice(0, 400);
+  const solarCapacityKw = Number(input.solarCapacityKw);
+
+  if (name.length < 4) {
+    throw new Error('Atçylyk sport toplumynyň ady azyndan 4 nyşan bolmaly.');
+  }
+  if (region.length < 2) {
+    throw new Error('Welaýaty ýa-da şäheri saýlaň.');
+  }
+  if (address.length < 4) {
+    throw new Error('Toplumyň salgysyny giriziň.');
+  }
+  if (!Number.isFinite(solarCapacityKw) || solarCapacityKw < 20 || solarCapacityKw > 2000) {
+    throw new Error('Gün energiýasy kuwwaty 20 bilen 2000 kWt aralygynda bolmaly.');
+  }
+
+  return mockRequest(() => {
+    const existing = input.id
+      ? getAllComplexesSync().find((c) => c.id === input.id)
+      : undefined;
+
+    const record: EquestrianComplex = existing
+      ? {
+          ...existing,
+          name,
+          region,
+          address,
+          solarCapacityKw,
+          ecoCertificationLevel: input.ecoCertificationLevel,
+          description: description || existing.description,
+        }
+      : {
+          id: `cmp-${Date.now().toString(36)}`,
+          name,
+          region,
+          address,
+          totalStables: 0,
+          totalHorses: 0,
+          solarCapacityKw,
+          ecoCertificationLevel: input.ecoCertificationLevel,
+          coordinates: { lat: 37.9601, lng: 58.3261 },
+          description:
+            description ||
+            'Smart & Green Ahalteke standartlaryna laýyk döwrebap atçylyk sport toplumy.',
+        };
+
+    return upsertComplexInStore(record);
+  }, 180);
+}
+
+// TODO: [BACKEND_API] PUT /api/v1/admin/stables/:id — Täze athana goşmak ýa-da bar bolan athanany täzelemek.
+export async function saveStableAdmin(input: StableCreateInput): Promise<ApiResponse<Stable[]>> {
+  const name = input.name.trim().replace(/\s+/g, ' ').slice(0, 80);
+  const code = input.code.trim().toUpperCase().slice(0, 20);
+  const headSeisName = input.headSeisName.trim().replace(/\s+/g, ' ').slice(0, 80);
+  const boxCount = Number(input.boxCount);
+  const occupiedBoxes = Number(input.occupiedBoxes);
+  const rainwaterHarvestingLiters = Number(input.rainwaterHarvestingLiters);
+
+  if (!input.complexId) {
+    throw new Error('Atçylyk sport toplumyny saýlaň.');
+  }
+  if (name.length < 3) {
+    throw new Error('Athananyň ady azyndan 3 nyşan bolmaly.');
+  }
+  if (code.length < 3) {
+    throw new Error('Athana kody (mysal: ATH-AG-03) girizilmeli.');
+  }
+  if (!Number.isFinite(boxCount) || boxCount < 4 || boxCount > 80) {
+    throw new Error('Bokslaryň sany 4 bilen 80 aralygynda bolmaly.');
+  }
+  if (!Number.isFinite(occupiedBoxes) || occupiedBoxes < 0 || occupiedBoxes > boxCount) {
+    throw new Error('Eýelenen bokslaryň sany umumy boks sanyndan köp bolmaly däl.');
+  }
+  if (headSeisName.length < 3) {
+    throw new Error('Jogapkär baş seýisiň adyny giriziň.');
+  }
+
+  return mockRequest(() => {
+    const existing = input.id ? getAllStablesSync().find((s) => s.id === input.id) : undefined;
+    const record: Stable = existing
+      ? {
+          ...existing,
+          complexId: input.complexId,
+          name,
+          code,
+          boxCount,
+          occupiedBoxes,
+          solarRoofEnabled: Boolean(input.solarRoofEnabled),
+          rainwaterHarvestingLiters: Number.isFinite(rainwaterHarvestingLiters)
+            ? Math.max(1000, rainwaterHarvestingLiters)
+            : existing.rainwaterHarvestingLiters,
+          headSeisName,
+        }
+      : {
+          id: `stb-${Date.now().toString(36)}`,
+          complexId: input.complexId,
+          name,
+          code,
+          boxCount,
+          occupiedBoxes,
+          solarRoofEnabled: Boolean(input.solarRoofEnabled),
+          rainwaterHarvestingLiters: Number.isFinite(rainwaterHarvestingLiters)
+            ? Math.max(1000, rainwaterHarvestingLiters)
+            : 9500,
+          airQualityIndex: input.solarRoofEnabled ? 16 : 22,
+          temperatureC: 20.2,
+          humidityPercent: 46,
+          headSeisName,
+        };
+
+    return upsertStableInStore(record);
+  }, 190);
+}
+
+// TODO: [BACKEND_API] POST /api/v1/admin/stables — Täze athana döretmek we degişli atçylyk toplumyna birikdirmek.
 export async function createStableAdmin(input: StableCreateInput): Promise<ApiResponse<Stable>> {
   const name = input.name.trim().replace(/\s+/g, ' ').slice(0, 80);
   const code = input.code.trim().toUpperCase().slice(0, 20);
@@ -477,6 +629,8 @@ export function getApplicationStatusLabelTk(status: AcademyApplicationStatus): s
       return 'Kabul edildi';
     case 'söhbetdeşlik':
       return 'Söhbetdeşlik';
+    case 'ret_edildi':
+      return 'Ret edildi';
     default:
       return 'Garaşylýar';
   }
@@ -527,6 +681,63 @@ export function exportAcademyApplicationsCsv(
   // UTF-8 BOM Excel-de türkmen harplaryny (ä, ň, ö, ş, ü, ý, ž) dogry açmak üçin
   const csvWithBom = `\uFEFF${csvBody}`;
   const fileName = `aba-annayew-akademiya-anketalar-${new Date().toISOString().slice(0, 10)}.csv`;
+
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const blob = new Blob([csvWithBom], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return fileName;
+}
+
+// TODO: [BACKEND_API] GET /api/v1/admin/overview/export — Athanalaryň «Ýaşyl Reýting» (Eco-Score) tablisasyny Excel üçin UTF-8 BOM CSV görnüşinde eksport etmek.
+export function exportEcoRankingsCsv(rankings: StableEcoRankingItem[]): string {
+  const headers = [
+    'Orny',
+    'Athana ady',
+    'Athana kody',
+    'Atçylyk Sport Toplumy',
+    'Welaýat / Şäher',
+    'Jogapkär Baş Seýis',
+    'Eýelenen bokslar',
+    'Jemi bokslar',
+    'Gün üçekli',
+    'Suw tygşytlylygy (L)',
+    'Gün energiýasy (kWt)',
+    'Howa hili indeksi (AQI)',
+    'Ýaşyl Reýting (Eco-Score / 100)',
+  ];
+
+  const rows = rankings.map((row, idx) => [
+    idx + 1,
+    row.stableName,
+    row.stableCode,
+    row.complexName,
+    row.region,
+    row.headSeisName,
+    row.occupiedBoxes,
+    row.boxCount,
+    row.solarRoofEnabled ? 'Hawa' : 'Ýok',
+    row.waterSavedLiters,
+    row.solarEnergyKwh,
+    row.airQualityIndex,
+    row.ecoScore,
+  ]);
+
+  const csvBody = [
+    headers.map(escapeCsvCell).join(','),
+    ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+  ].join('\r\n');
+
+  const csvWithBom = `\uFEFF${csvBody}`;
+  const fileName = `smart-green-ahalteke-yasyl-reyting-${new Date().toISOString().slice(0, 10)}.csv`;
 
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     const blob = new Blob([csvWithBom], { type: 'text/csv;charset=utf-8;' });

@@ -272,7 +272,15 @@ export const AdminPortalLayout: React.FC<AdminPortalLayoutProps> = ({
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             >
               {activeTab === 'overview' && (
-                <AdminOverviewScreen onNavigateTab={(tab) => handleSelectTab(tab)} />
+                <AdminOverviewScreen
+                  onNavigateTab={(tab) => {
+                    if (tab === 'complexes' || tab === 'staff') {
+                      handleSelectTab('assignments');
+                    } else {
+                      handleSelectTab(tab);
+                    }
+                  }}
+                />
               )}
               {activeTab === 'assignments' && <AdminAssignmentsScreen />}
               {activeTab === 'content' && <AdminContentScreen />}
