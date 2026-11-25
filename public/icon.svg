@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#064E3B"/>
+  <rect x="28" y="28" width="456" height="456" rx="88" stroke="#D4AF37" stroke-opacity="0.45" stroke-width="6"/>
+  <!-- Stylized Akhal-Teke Silhouette & Eco Leaf -->
+  <path
+    d="M156 368C164 316 184 268 206 232C216 215 220 190 212 164L236 120L262 146C282 142 308 148 332 168L374 202C382 209 382 222 372 228L334 246C312 256 290 246 280 232C272 260 286 300 326 322C344 332 356 350 360 368H156Z"
+    fill="#D4AF37"
+  />
+  <!-- Eco leaf accent along the neck -->
+  <path
+    d="M174 228C152 198 158 156 196 138C202 174 196 206 174 228Z"
+    fill="#10B981"
+  />
+  <!-- Subtle Turkmen geometric diamond accent -->
+  <path d="M256 64L276 84L256 104L236 84L256 64Z" fill="#10B981"/>
+</svg>

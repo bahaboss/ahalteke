@@ -1,0 +1,6 @@
+{
+  "name": "Smart & Green Ahalteke",
+  "description": "Türkmenistanda sanly atçylyk, ahalteke bedewleriniň IoT gözegçiligi we «Ýaşyl Athana» ekologik dolandyryş PWA platformasy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

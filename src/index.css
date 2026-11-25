@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-emerald-deep: #064E3B;
+  --color-emerald-forest: #04392B;
+  --color-emerald-accent: #10B981;
+  --color-emerald-soft: #ECFDF5;
+  --color-gold-akhal: #D4AF37;
+  --color-gold-warm: #B89122;
+  --color-gold-soft: #FBF7E9;
+  --color-canvas: #F8FAF9;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #EEF3F1;
+  --color-border-hairline: #DCE6E1;
+  --color-ink-primary: #0F241D;
+  --color-ink-secondary: #415850;
+  --color-ink-muted: #647A72;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    background-color: var(--color-canvas);
+    color: var(--color-ink-primary);
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Lightweight compositor-only keyframes for AnimatedHorseLogo */
+@keyframes ahaltekeStride {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(-1.2deg);
+  }
+}
+
+@keyframes ahaltekeManeFlow {
+  0%, 100% {
+    transform: translateX(0px) scaleX(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translateX(-1.5px) scaleX(1.04);
+    opacity: 1;
+  }
+}
+
+/* Subtle floating carpet göl motion (compositor-only) */
+@keyframes golFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Subtle breathing motion for the 5 Akhal-Teke hero horses */
+@keyframes horseBreathe {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.008);
+  }
+}
+
+/* Rising emerald eco-particles inside the Hero energy portal */
+@keyframes ecoParticleRise {
+  0% {
+    transform: translateY(48px) scale(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.65;
+  }
+  80% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(-220px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+/* Slow drifting golden dust particles over the Hero canvas */
+@keyframes goldDustFloat {
+  0% {
+    transform: translate3d(0px, 36px, 0) scale(0.75);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.72;
+  }
+  75% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate3d(24px, -210px, 0) scale(1.12);
+    opacity: 0;
+  }
+}
+
+/* Silver & gold jewelry sheen glint across the 5 horses */
+@keyframes jewelryShimmer {
+  0%, 100% {
+    transform: translateX(-120%) skewX(-18deg);
+    opacity: 0;
+  }
+  45% {
+    opacity: 0.22;
+  }
+  65% {
+    transform: translateX(220%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+.animate-ahalteke-stride {
+  animation: ahaltekeStride 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.animate-ahalteke-mane {
+  animation: ahaltekeManeFlow 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  transform-origin: center;
+}
+
+.animate-gol-float {
+  animation: golFloat 4.2s ease-in-out infinite;
+}
+
+.animate-horse-breathe {
+  animation: horseBreathe 4.8s ease-in-out infinite;
+}
+
+.animate-eco-particle {
+  animation: ecoParticleRise 6.5s linear infinite;
+}
+
+.animate-gold-dust {
+  animation: goldDustFloat 7.2s ease-in-out infinite;
+}
+
+.animate-jewelry-shimmer {
+  animation: jewelryShimmer 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .animate-ahalteke-stride,
+  .animate-ahalteke-mane,
+  .animate-gol-float,
+  .animate-horse-breathe,
+  .animate-eco-particle,
+  .animate-gold-dust,
+  .animate-jewelry-shimmer {
+    animation: none !important;
+  }
+}
